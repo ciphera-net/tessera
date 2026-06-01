@@ -11,3 +11,4 @@ pub mod server;
 pub mod suite;
 
 pub use error::TesseraError;
+pub use suite::{ServerSetupBytes, TesseraCipherSuite, new_server_setup};
