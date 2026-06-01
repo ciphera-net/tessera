@@ -1,0 +1,28 @@
+[package]
+name = "ciphera-tessera"
+version = "0.0.1"
+edition = "2024"
+rust-version = "1.85"
+license = "Apache-2.0"
+description = "Tessera — open-source zero-knowledge identity (OPAQUE) core and sidecar"
+repository = "https://github.com/ciphera-net/tessera"
+
+[lib]
+name = "tessera"
+path = "src/lib.rs"
+
+[[bin]]
+name = "tessera-sidecar"
+path = "src/bin/tessera-sidecar.rs"
+
+[dependencies]
+opaque-ke = { version = "4.0.1", features = ["ristretto255", "argon2", "serde"] }
+sha2 = "0.10"
+rand = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+thiserror = "1"
+
+[dev-dependencies]
+tempfile = "3"
