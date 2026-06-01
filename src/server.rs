@@ -154,4 +154,16 @@ mod tests {
         );
         assert!(result.is_err(), "wrong password must fail at client finish");
     }
+
+    #[test]
+    fn login_start_with_unknown_user_returns_ok() {
+        // `None` must reach `ServerLogin::start` so opaque-ke produces a timing-safe dummy
+        // response. An `Err` here would mean the wrapper short-circuits on unknown accounts,
+        // leaking their (non-)existence via an error/timing signal.
+        let setup = load_server_setup(&new_server_setup()).unwrap();
+        let mut rng = OsRng;
+        let c_start = ClientLogin::<TesseraCipherSuite>::start(&mut rng, b"any password").unwrap();
+        let result = login_start(&setup, None, &c_start.message.serialize(), b"nonexistent-user");
+        assert!(result.is_ok(), "unknown user must yield a dummy response, not an error");
+    }
 }
