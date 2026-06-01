@@ -67,41 +67,73 @@ fn full_register_and_login_over_socket() {
 
     // ---- Registration ----
     let c_reg = ClientRegistration::<TesseraCipherSuite>::start(&mut rng, password).unwrap();
-    let resp = send(&mut stream, &Request::RegisterStart {
-        request_b64: BASE64_STANDARD.encode(c_reg.message.serialize()),
-        credential_id: creds.into(),
-    });
-    let Response::RegisterStart { response_b64 } = resp else { panic!("expected RegisterStart, got {resp:?}") };
-    let c_reg_finish = c_reg.state.finish(
-        &mut rng,
-        password,
-        RegistrationResponse::deserialize(&BASE64_STANDARD.decode(response_b64).unwrap()).unwrap(),
-        ClientRegistrationFinishParameters::default(),
-    ).unwrap();
-    let resp = send(&mut stream, &Request::RegisterFinish {
-        upload_b64: BASE64_STANDARD.encode(c_reg_finish.message.serialize()),
-    });
-    let Response::RegisterFinish { password_file_b64 } = resp else { panic!("expected RegisterFinish, got {resp:?}") };
+    let resp = send(
+        &mut stream,
+        &Request::RegisterStart {
+            request_b64: BASE64_STANDARD.encode(c_reg.message.serialize()),
+            credential_id: creds.into(),
+        },
+    );
+    let Response::RegisterStart { response_b64 } = resp else {
+        panic!("expected RegisterStart, got {resp:?}")
+    };
+    let c_reg_finish = c_reg
+        .state
+        .finish(
+            &mut rng,
+            password,
+            RegistrationResponse::deserialize(&BASE64_STANDARD.decode(response_b64).unwrap())
+                .unwrap(),
+            ClientRegistrationFinishParameters::default(),
+        )
+        .unwrap();
+    let resp = send(
+        &mut stream,
+        &Request::RegisterFinish {
+            upload_b64: BASE64_STANDARD.encode(c_reg_finish.message.serialize()),
+        },
+    );
+    let Response::RegisterFinish { password_file_b64 } = resp else {
+        panic!("expected RegisterFinish, got {resp:?}")
+    };
 
     // ---- Login ----
     let c_login = ClientLogin::<TesseraCipherSuite>::start(&mut rng, password).unwrap();
-    let resp = send(&mut stream, &Request::LoginStart {
-        request_b64: BASE64_STANDARD.encode(c_login.message.serialize()),
-        password_file_b64: Some(password_file_b64),
-        credential_id: creds.into(),
-    });
-    let Response::LoginStart { login_id, response_b64 } = resp else { panic!("expected LoginStart, got {resp:?}") };
-    let c_login_finish = c_login.state.finish(
-        &mut rng,
-        password,
-        CredentialResponse::deserialize(&BASE64_STANDARD.decode(response_b64).unwrap()).unwrap(),
-        ClientLoginFinishParameters::default(),
-    ).unwrap();
-    let resp = send(&mut stream, &Request::LoginFinish {
+    let resp = send(
+        &mut stream,
+        &Request::LoginStart {
+            request_b64: BASE64_STANDARD.encode(c_login.message.serialize()),
+            password_file_b64: Some(password_file_b64),
+            credential_id: creds.into(),
+        },
+    );
+    let Response::LoginStart {
         login_id,
-        finalization_b64: BASE64_STANDARD.encode(c_login_finish.message.serialize()),
-    });
-    let Response::LoginFinish { session_key_b64 } = resp else { panic!("expected LoginFinish, got {resp:?}") };
+        response_b64,
+    } = resp
+    else {
+        panic!("expected LoginStart, got {resp:?}")
+    };
+    let c_login_finish = c_login
+        .state
+        .finish(
+            &mut rng,
+            password,
+            CredentialResponse::deserialize(&BASE64_STANDARD.decode(response_b64).unwrap())
+                .unwrap(),
+            ClientLoginFinishParameters::default(),
+        )
+        .unwrap();
+    let resp = send(
+        &mut stream,
+        &Request::LoginFinish {
+            login_id,
+            finalization_b64: BASE64_STANDARD.encode(c_login_finish.message.serialize()),
+        },
+    );
+    let Response::LoginFinish { session_key_b64 } = resp else {
+        panic!("expected LoginFinish, got {resp:?}")
+    };
 
     // Server and client must agree on the session key.
     assert_eq!(

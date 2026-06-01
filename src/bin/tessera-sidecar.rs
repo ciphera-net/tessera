@@ -28,6 +28,12 @@ fn main() {
         Some("gen-setup") => {
             let path = args.get(2).expect("usage: gen-setup <path>");
             std::fs::write(path, new_server_setup()).expect("write setup");
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o400))
+                    .expect("restrict setup file permissions");
+            }
             eprintln!("wrote server setup to {path}");
         }
         Some("serve") => {
@@ -73,9 +79,12 @@ fn handle_conn(mut stream: UnixStream, setup_bytes: &[u8], logins: LoginMap) {
             Err(_) => return, // peer closed or bad frame
         };
         let resp = match serde_json::from_slice::<Request>(&frame) {
-            Ok(req) => dispatch(req, setup_bytes, &logins)
-                .unwrap_or_else(|e| Response::Error { message: e.to_string() }),
-            Err(e) => Response::Error { message: format!("bad request json: {e}") },
+            Ok(req) => dispatch(req, setup_bytes, &logins).unwrap_or_else(|e| Response::Error {
+                message: e.to_string(),
+            }),
+            Err(e) => Response::Error {
+                message: format!("bad request json: {e}"),
+            },
         };
         let bytes = serde_json::to_vec(&resp).expect("serialize response");
         if write_frame(&mut stream, &bytes).is_err() {
@@ -87,17 +96,28 @@ fn handle_conn(mut stream: UnixStream, setup_bytes: &[u8], logins: LoginMap) {
 fn dispatch(req: Request, setup_bytes: &[u8], logins: &LoginMap) -> Result<Response, TesseraError> {
     let setup = load_server_setup(setup_bytes)?;
     match req {
-        Request::RegisterStart { request_b64, credential_id } => {
+        Request::RegisterStart {
+            request_b64,
+            credential_id,
+        } => {
             let request = BASE64_STANDARD.decode(request_b64)?;
             let response = register_start(&setup, &request, credential_id.as_bytes())?;
-            Ok(Response::RegisterStart { response_b64: BASE64_STANDARD.encode(response) })
+            Ok(Response::RegisterStart {
+                response_b64: BASE64_STANDARD.encode(response),
+            })
         }
         Request::RegisterFinish { upload_b64 } => {
             let upload = BASE64_STANDARD.decode(upload_b64)?;
             let file = register_finish(&upload)?;
-            Ok(Response::RegisterFinish { password_file_b64: BASE64_STANDARD.encode(file) })
+            Ok(Response::RegisterFinish {
+                password_file_b64: BASE64_STANDARD.encode(file),
+            })
         }
-        Request::LoginStart { request_b64, password_file_b64, credential_id } => {
+        Request::LoginStart {
+            request_b64,
+            password_file_b64,
+            credential_id,
+        } => {
             let request = BASE64_STANDARD.decode(request_b64)?;
             let file = match password_file_b64 {
                 Some(b64) => Some(BASE64_STANDARD.decode(b64)?),
@@ -111,9 +131,15 @@ fn dispatch(req: Request, setup_bytes: &[u8], logins: &LoginMap) -> Result<Respo
                 prune_expired(&mut map);
                 map.insert(login_id.clone(), (state, Instant::now()));
             }
-            Ok(Response::LoginStart { login_id, response_b64: BASE64_STANDARD.encode(response) })
+            Ok(Response::LoginStart {
+                login_id,
+                response_b64: BASE64_STANDARD.encode(response),
+            })
         }
-        Request::LoginFinish { login_id, finalization_b64 } => {
+        Request::LoginFinish {
+            login_id,
+            finalization_b64,
+        } => {
             let finalization = BASE64_STANDARD.decode(finalization_b64)?;
             let (state, _) = {
                 let mut map = logins.lock().unwrap();
@@ -121,7 +147,9 @@ fn dispatch(req: Request, setup_bytes: &[u8], logins: &LoginMap) -> Result<Respo
                 map.remove(&login_id).ok_or(TesseraError::UnknownLogin)?
             };
             let session_key = login_finish(state, &finalization)?;
-            Ok(Response::LoginFinish { session_key_b64: BASE64_STANDARD.encode(session_key) })
+            Ok(Response::LoginFinish {
+                session_key_b64: BASE64_STANDARD.encode(session_key),
+            })
         }
     }
 }

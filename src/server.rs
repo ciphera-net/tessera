@@ -43,7 +43,9 @@ pub fn login_start(
 ) -> Result<(ServerLogin<TesseraCipherSuite>, Vec<u8>), TesseraError> {
     let mut rng = rand::rngs::OsRng;
     let record = match password_file {
-        Some(bytes) => Some(ServerRegistration::<TesseraCipherSuite>::deserialize(bytes)?),
+        Some(bytes) => Some(ServerRegistration::<TesseraCipherSuite>::deserialize(
+            bytes,
+        )?),
         None => None,
     };
     let request = CredentialRequest::<TesseraCipherSuite>::deserialize(credential_request)?;
@@ -118,8 +120,13 @@ mod tests {
         let mut rng = OsRng;
 
         let c_start = ClientLogin::<TesseraCipherSuite>::start(&mut rng, b"correct horse").unwrap();
-        let (server_state, resp) =
-            login_start(&setup, Some(&file), &c_start.message.serialize(), b"creds-123").unwrap();
+        let (server_state, resp) = login_start(
+            &setup,
+            Some(&file),
+            &c_start.message.serialize(),
+            b"creds-123",
+        )
+        .unwrap();
         let c_finish = c_start
             .state
             .finish(
@@ -143,9 +150,15 @@ mod tests {
         let (file, _) = register(&setup, b"correct horse", b"creds-123");
         let mut rng = OsRng;
 
-        let c_start = ClientLogin::<TesseraCipherSuite>::start(&mut rng, b"WRONG password").unwrap();
-        let (_server_state, resp) =
-            login_start(&setup, Some(&file), &c_start.message.serialize(), b"creds-123").unwrap();
+        let c_start =
+            ClientLogin::<TesseraCipherSuite>::start(&mut rng, b"WRONG password").unwrap();
+        let (_server_state, resp) = login_start(
+            &setup,
+            Some(&file),
+            &c_start.message.serialize(),
+            b"creds-123",
+        )
+        .unwrap();
         let result = c_start.state.finish(
             &mut rng,
             b"WRONG password",
@@ -163,7 +176,15 @@ mod tests {
         let setup = load_server_setup(&new_server_setup()).unwrap();
         let mut rng = OsRng;
         let c_start = ClientLogin::<TesseraCipherSuite>::start(&mut rng, b"any password").unwrap();
-        let result = login_start(&setup, None, &c_start.message.serialize(), b"nonexistent-user");
-        assert!(result.is_ok(), "unknown user must yield a dummy response, not an error");
+        let result = login_start(
+            &setup,
+            None,
+            &c_start.message.serialize(),
+            b"nonexistent-user",
+        );
+        assert!(
+            result.is_ok(),
+            "unknown user must yield a dummy response, not an error"
+        );
     }
 }

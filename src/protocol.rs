@@ -11,8 +11,13 @@ pub const MAX_FRAME: usize = 1024 * 1024;
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
-    RegisterStart { request_b64: String, credential_id: String },
-    RegisterFinish { upload_b64: String },
+    RegisterStart {
+        request_b64: String,
+        credential_id: String,
+    },
+    RegisterFinish {
+        upload_b64: String,
+    },
     LoginStart {
         request_b64: String,
         /// The server's stored OPAQUE credential record (base64). `None` for an unknown
@@ -21,7 +26,10 @@ pub enum Request {
         password_file_b64: Option<String>,
         credential_id: String,
     },
-    LoginFinish { login_id: String, finalization_b64: String },
+    LoginFinish {
+        login_id: String,
+        finalization_b64: String,
+    },
 }
 
 /// Responses from the sidecar to the Go SDK. Internally tagged by a `result` field whose
@@ -30,11 +38,22 @@ pub enum Request {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "result", rename_all = "snake_case")]
 pub enum Response {
-    RegisterStart { response_b64: String },
-    RegisterFinish { password_file_b64: String },
-    LoginStart { login_id: String, response_b64: String },
-    LoginFinish { session_key_b64: String },
-    Error { message: String },
+    RegisterStart {
+        response_b64: String,
+    },
+    RegisterFinish {
+        password_file_b64: String,
+    },
+    LoginStart {
+        login_id: String,
+        response_b64: String,
+    },
+    LoginFinish {
+        session_key_b64: String,
+    },
+    Error {
+        message: String,
+    },
 }
 
 /// Write a length-prefixed frame: `[u32 big-endian length][payload]`. Flushes the writer so
@@ -55,7 +74,10 @@ pub fn read_frame<R: Read>(r: &mut R) -> io::Result<Vec<u8>> {
     r.read_exact(&mut len_buf)?;
     let len = u32::from_be_bytes(len_buf) as usize;
     if len > MAX_FRAME {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "frame exceeds MAX_FRAME"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "frame exceeds MAX_FRAME",
+        ));
     }
     let mut buf = vec![0u8; len];
     r.read_exact(&mut buf)?;
@@ -100,7 +122,9 @@ mod tests {
 
     #[test]
     fn response_serializes_as_tagged_json() {
-        let resp = Response::LoginFinish { session_key_b64: "ZZZ".into() };
+        let resp = Response::LoginFinish {
+            session_key_b64: "ZZZ".into(),
+        };
         let json = serde_json::to_string(&resp).unwrap();
         assert!(json.contains("\"result\":\"login_finish\""));
         let back: Response = serde_json::from_str(&json).unwrap();
