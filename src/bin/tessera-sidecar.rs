@@ -28,6 +28,10 @@ fn main() {
         Some("gen-setup") => {
             let path = args.get(2).expect("usage: gen-setup <path>");
             std::fs::write(path, new_server_setup()).expect("write setup");
+            // Lock the OPRF secret to owner-read-only (0o400). This also guards against an
+            // accidental re-run of `gen-setup` clobbering a live ServerSetup (overwriting it
+            // would invalidate every existing credential): re-running now fails with EACCES
+            // until the operator deliberately removes the file.
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;

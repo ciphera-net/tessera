@@ -1,2 +1,7 @@
 target/
 .git/
+.github/
+.env*
+*.bin
+deploy/
+tests/
