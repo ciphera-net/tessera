@@ -6,7 +6,8 @@ use serde::{Deserialize, Serialize};
 /// bytes; anything larger is malformed or hostile.
 pub const MAX_FRAME: usize = 1024 * 1024;
 
-/// Requests from the Go SDK to the sidecar.
+/// Requests from the Go SDK to the sidecar. Internally tagged by an `op` field whose value
+/// is the snake_case variant name, e.g. `{"op":"register_start", ...}`.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
@@ -14,13 +15,18 @@ pub enum Request {
     RegisterFinish { upload_b64: String },
     LoginStart {
         request_b64: String,
+        /// The server's stored OPAQUE credential record (base64). `None` for an unknown
+        /// account — the sidecar then lets opaque-ke produce a timing-safe fake response,
+        /// so the protocol never reveals whether the account exists (user-enumeration safe).
         password_file_b64: Option<String>,
         credential_id: String,
     },
     LoginFinish { login_id: String, finalization_b64: String },
 }
 
-/// Responses from the sidecar to the Go SDK.
+/// Responses from the sidecar to the Go SDK. Internally tagged by a `result` field whose
+/// value is the snake_case variant name, e.g. `{"result":"login_finish", ...}`. The
+/// `Error` variant carries a human-readable message.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "result", rename_all = "snake_case")]
 pub enum Response {
@@ -31,7 +37,10 @@ pub enum Response {
     Error { message: String },
 }
 
-/// Write a length-prefixed frame: `[u32 big-endian length][payload]`.
+/// Write a length-prefixed frame: `[u32 big-endian length][payload]`. Flushes the writer so
+/// the frame is actually transmitted — important for the request/response cycle and required
+/// when `W` is buffered (e.g. a `BufWriter`); on an unbuffered `UnixStream` the flush is a
+/// harmless no-op.
 pub fn write_frame<W: Write>(w: &mut W, payload: &[u8]) -> io::Result<()> {
     let len = u32::try_from(payload.len())
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "payload too large"))?;
@@ -87,5 +96,14 @@ mod tests {
         buf.extend_from_slice(b"x");
         let mut cursor = Cursor::new(buf);
         assert!(read_frame(&mut cursor).is_err());
+    }
+
+    #[test]
+    fn response_serializes_as_tagged_json() {
+        let resp = Response::LoginFinish { session_key_b64: "ZZZ".into() };
+        let json = serde_json::to_string(&resp).unwrap();
+        assert!(json.contains("\"result\":\"login_finish\""));
+        let back: Response = serde_json::from_str(&json).unwrap();
+        assert!(matches!(back, Response::LoginFinish { .. }));
     }
 }
