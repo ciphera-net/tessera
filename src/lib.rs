@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Tessera — zero-knowledge identity core (OPAQUE, RFC 9807).
 //!
 //! This crate wraps the audited `opaque-ke` library behind a fixed cipher
