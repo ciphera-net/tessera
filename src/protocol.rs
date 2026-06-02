@@ -52,6 +52,7 @@ pub enum Response {
         session_key_b64: String,
     },
     Error {
+        code: String,
         message: String,
     },
 }
@@ -129,5 +130,23 @@ mod tests {
         assert!(json.contains("\"result\":\"login_finish\""));
         let back: Response = serde_json::from_str(&json).unwrap();
         assert!(matches!(back, Response::LoginFinish { .. }));
+    }
+
+    #[test]
+    fn error_response_carries_code_and_message() {
+        // Pins the wire shape the Go SDK (Phase 2B) decodes: a tagged `error` result with BOTH a
+        // stable `code` and a human `message`. Renaming/removing the `code` field breaks this.
+        let resp = Response::Error {
+            code: "bad_request".into(),
+            message: "boom".into(),
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        assert!(json.contains("\"result\":\"error\""));
+        assert!(json.contains("\"code\":\"bad_request\""));
+        assert!(json.contains("\"message\":\"boom\""));
+        let back: Response = serde_json::from_str(&json).unwrap();
+        assert!(
+            matches!(back, Response::Error { code, message } if code == "bad_request" && message == "boom")
+        );
     }
 }
