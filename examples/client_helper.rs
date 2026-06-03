@@ -2,6 +2,11 @@
 //! sidecar image). Drives the client steps via a line protocol on stdin/stdout so an integration
 //! test in another language can relay messages to a real `tessera-sidecar`.
 //!
+//! The crypto is delegated to `tessera::client` — the SAME first-class code path the `tessera-wasm`
+//! browser bindings compile from — so this helper now exercises the PRODUCTION pinned KSF
+//! (Argon2id/64 MiB/t=3), not opaque-ke's default. That makes the cross-language integration test a
+//! real check on the pinned KSF's interop.
+//!
 //! WARNING: this helper prints export_key on stdout (reg-finish / login-finish replies), so it
 //! WILL appear in CI logs under `go test -v`. Safe ONLY with ephemeral test credentials (a fresh
 //! `gen-setup` ServerSetup + a throw-away password). NEVER run it against a production ServerSetup
@@ -18,21 +23,15 @@
 use std::io::{BufRead, Write};
 
 use base64::prelude::*;
-use opaque_ke::{
-    ClientLogin, ClientLoginFinishParameters, ClientRegistration,
-    ClientRegistrationFinishParameters, CredentialResponse, RegistrationResponse,
-};
-use rand::rngs::OsRng;
-use tessera::suite::TesseraCipherSuite;
+use tessera::client::{self, LoginState, RegistrationState};
 
 fn main() {
     let stdin = std::io::stdin();
     let stdout = std::io::stdout();
     let mut out = stdout.lock();
 
-    let mut reg_state: Option<ClientRegistration<TesseraCipherSuite>> = None;
-    let mut login_state: Option<ClientLogin<TesseraCipherSuite>> = None;
-    let mut rng = OsRng;
+    let mut reg_state: Option<RegistrationState> = None;
+    let mut login_state: Option<LoginState> = None;
 
     for line in stdin.lock().lines() {
         let line = match line {
@@ -45,7 +44,7 @@ fn main() {
             }
         };
         let parts: Vec<&str> = line.split_whitespace().collect();
-        let reply = handle(&parts, &mut reg_state, &mut login_state, &mut rng);
+        let reply = handle(&parts, &mut reg_state, &mut login_state);
         writeln!(out, "{reply}").expect("write stdout");
         out.flush().expect("flush stdout");
     }
@@ -59,85 +58,62 @@ fn b64d(s: &str) -> Result<Vec<u8>, String> {
 
 fn handle(
     parts: &[&str],
-    reg_state: &mut Option<ClientRegistration<TesseraCipherSuite>>,
-    login_state: &mut Option<ClientLogin<TesseraCipherSuite>>,
-    rng: &mut OsRng,
+    reg_state: &mut Option<RegistrationState>,
+    login_state: &mut Option<LoginState>,
 ) -> String {
     match parts {
-        ["reg-start", password] => {
-            match ClientRegistration::<TesseraCipherSuite>::start(rng, password.as_bytes()) {
-                Ok(c) => {
-                    let msg = BASE64_STANDARD.encode(c.message.serialize());
-                    *reg_state = Some(c.state);
-                    format!("OK {msg}")
-                }
-                Err(e) => format!("ERR {e:?}"),
+        ["reg-start", password] => match client::register_start(password.as_bytes()) {
+            Ok((request, state)) => {
+                *reg_state = Some(state);
+                format!("OK {}", BASE64_STANDARD.encode(request))
             }
-        }
+            Err(e) => format!("ERR {e:?}"),
+        },
         ["reg-finish", password, resp_b64] => {
-            // Validate inputs BEFORE consuming the stored state: a bad response must leave the
-            // state intact and report the real decode error, not a misleading "no reg state".
+            // Decode base64 BEFORE consuming the stored state so a raw decode error is reported
+            // without advancing state. A valid-base64 but malformed OPAQUE response is caught
+            // INSIDE client::register_finish (state already taken) — fine for a single-shot helper.
             let resp_bytes = match b64d(resp_b64) {
                 Ok(b) => b,
                 Err(e) => return format!("ERR {e}"),
-            };
-            let resp = match RegistrationResponse::deserialize(&resp_bytes) {
-                Ok(r) => r,
-                Err(e) => return format!("ERR {e:?}"),
             };
             let state = match reg_state.take() {
                 Some(s) => s,
                 None => return "ERR no reg state".into(),
             };
-            match state.finish(
-                rng,
-                password.as_bytes(),
-                resp,
-                ClientRegistrationFinishParameters::default(),
-            ) {
-                Ok(f) => format!(
+            match client::register_finish(state, password.as_bytes(), &resp_bytes) {
+                Ok((upload, export_key)) => format!(
                     "OK {} {}",
-                    BASE64_STANDARD.encode(f.message.serialize()),
-                    BASE64_STANDARD.encode(f.export_key)
+                    BASE64_STANDARD.encode(upload),
+                    BASE64_STANDARD.encode(export_key)
                 ),
                 Err(e) => format!("ERR {e:?}"),
             }
         }
-        ["login-start", password] => {
-            match ClientLogin::<TesseraCipherSuite>::start(rng, password.as_bytes()) {
-                Ok(c) => {
-                    let msg = BASE64_STANDARD.encode(c.message.serialize());
-                    *login_state = Some(c.state);
-                    format!("OK {msg}")
-                }
-                Err(e) => format!("ERR {e:?}"),
+        ["login-start", password] => match client::login_start(password.as_bytes()) {
+            Ok((request, state)) => {
+                *login_state = Some(state);
+                format!("OK {}", BASE64_STANDARD.encode(request))
             }
-        }
+            Err(e) => format!("ERR {e:?}"),
+        },
         ["login-finish", password, resp_b64] => {
-            // Validate inputs BEFORE consuming the stored state (see reg-finish).
+            // Decode base64 BEFORE consuming the stored state (see reg-finish): structural OPAQUE
+            // errors are caught inside client::login_finish after the state is taken.
             let resp_bytes = match b64d(resp_b64) {
                 Ok(b) => b,
                 Err(e) => return format!("ERR {e}"),
-            };
-            let resp = match CredentialResponse::deserialize(&resp_bytes) {
-                Ok(r) => r,
-                Err(e) => return format!("ERR {e:?}"),
             };
             let state = match login_state.take() {
                 Some(s) => s,
                 None => return "ERR no login state".into(),
             };
-            match state.finish(
-                rng,
-                password.as_bytes(),
-                resp,
-                ClientLoginFinishParameters::default(),
-            ) {
-                Ok(f) => format!(
+            match client::login_finish(state, password.as_bytes(), &resp_bytes) {
+                Ok((finalization, session_key, export_key)) => format!(
                     "OK {} {} {}",
-                    BASE64_STANDARD.encode(f.message.serialize()),
-                    BASE64_STANDARD.encode(f.session_key),
-                    BASE64_STANDARD.encode(f.export_key)
+                    BASE64_STANDARD.encode(finalization),
+                    BASE64_STANDARD.encode(session_key),
+                    BASE64_STANDARD.encode(export_key)
                 ),
                 Err(e) => format!("ERR {e:?}"),
             }
