@@ -5,6 +5,7 @@
 //! suite and a small set of stateless server-side helpers. The sidecar binary
 //! exposes those helpers over a Unix domain socket for the Go server SDK.
 
+pub mod client;
 pub mod error;
 pub mod protocol;
 pub mod server;
