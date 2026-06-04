@@ -211,7 +211,12 @@ fn handle_conn(
                 message: format!("bad request json: {e}"),
             },
         };
-        let bytes = serde_json::to_vec(&resp).expect("serialize response");
+        // No-panic invariant: if a future Response variant ever fails to serialize, emit a fixed
+        // internal-error frame instead of panicking the connection thread.
+        let bytes = serde_json::to_vec(&resp).unwrap_or_else(|_| {
+            br#"{"result":"error","code":"internal","message":"response serialization failed"}"#
+                .to_vec()
+        });
         if write_frame(&mut stream, &bytes).is_err() {
             return;
         }

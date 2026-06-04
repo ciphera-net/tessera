@@ -7,6 +7,7 @@ use opaque_ke::{
     CredentialFinalization, CredentialRequest, RegistrationRequest, RegistrationUpload,
     ServerLogin, ServerLoginParameters, ServerRegistration, ServerSetup,
 };
+use zeroize::Zeroize;
 
 use crate::error::TesseraError;
 use crate::suite::TesseraCipherSuite;
@@ -68,8 +69,11 @@ pub fn login_finish(
 ) -> Result<Vec<u8>, TesseraError> {
     let finalization =
         CredentialFinalization::<TesseraCipherSuite>::deserialize(credential_finalization)?;
-    let result = server_login.finish(finalization, ServerLoginParameters::default())?;
-    Ok(result.session_key.to_vec())
+    let mut result = server_login.finish(finalization, ServerLoginParameters::default())?;
+    let sk = result.session_key.to_vec();
+    // opaque-ke 4.x ServerLoginFinishResult is NOT ZeroizeOnDrop — zero the session_key copy it holds.
+    result.session_key.as_mut_slice().zeroize();
+    Ok(sk)
 }
 
 #[cfg(test)]

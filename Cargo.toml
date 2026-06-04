@@ -23,6 +23,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 base64 = "0.22"
 thiserror = "1"
+zeroize = "1"  # zero intermediate export_key/session_key copies (opaque-ke FinishResult is not ZeroizeOnDrop)
 
 [dev-dependencies]
 tempfile = "3"

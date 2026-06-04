@@ -80,6 +80,7 @@ dependencies = [
  "sha2",
  "tempfile",
  "thiserror",
+ "zeroize",
 ]
 
 [[package]]

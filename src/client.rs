@@ -10,13 +10,16 @@ use opaque_ke::{
     ClientRegistrationFinishParameters, CredentialResponse, Identifiers, RegistrationResponse,
 };
 use rand::rngs::OsRng;
+use zeroize::Zeroize;
 
 use crate::error::TesseraError;
 use crate::suite::TesseraCipherSuite;
 
 /// Client-held OPAQUE state between start and finish. Aliased so downstream crates (tessera-wasm)
 /// can name it WITHOUT a direct opaque-ke dependency — avoiding cross-crate feature-matching on the
-/// suite. opaque-ke's state types zeroize their secret material on drop.
+/// suite. opaque-ke's *state* types (ClientRegistration/ClientLogin) are ZeroizeOnDrop; its *result*
+/// types (the Finish*Result structs) are NOT, so register_finish/login_finish below explicitly zeroize
+/// the export_key/session_key copies the result still holds after extraction.
 pub type RegistrationState = ClientRegistration<TesseraCipherSuite>;
 pub type LoginState = ClientLogin<TesseraCipherSuite>;
 
@@ -65,11 +68,15 @@ pub fn register_finish(
     let response = RegistrationResponse::<TesseraCipherSuite>::deserialize(registration_response)?;
     let ksf = tessera_opaque_ksf();
     let params = ClientRegistrationFinishParameters::new(Identifiers::default(), Some(&ksf));
-    let result = state.finish(&mut rng, password, response, params)?;
-    Ok((
+    let mut result = state.finish(&mut rng, password, response, params)?;
+    let out = (
         result.message.serialize().to_vec(),
         result.export_key.to_vec(),
-    ))
+    );
+    // opaque-ke 4.x FinishResult is NOT ZeroizeOnDrop — zero the export_key copy the result still
+    // holds before it drops (the returned Vec is the caller's to wipe).
+    result.export_key.as_mut_slice().zeroize();
+    Ok(out)
 }
 
 /// Begin login. Returns `(serialized CredentialRequest, client state)`.
@@ -97,12 +104,17 @@ pub fn login_finish(
     // `ksf` field exists on this struct precisely because the client owns the KSF at login.
     let ksf = tessera_opaque_ksf();
     let params = ClientLoginFinishParameters::new(None, Identifiers::default(), Some(&ksf));
-    let result = state.finish(&mut rng, password, response, params)?;
-    Ok((
+    let mut result = state.finish(&mut rng, password, response, params)?;
+    let out = (
         result.message.serialize().to_vec(),
         result.session_key.to_vec(),
         result.export_key.to_vec(),
-    ))
+    );
+    // opaque-ke 4.x FinishResult is NOT ZeroizeOnDrop — zero the session_key + export_key copies the
+    // result still holds before it drops (the returned Vecs are the caller's to wipe).
+    result.session_key.as_mut_slice().zeroize();
+    result.export_key.as_mut_slice().zeroize();
+    Ok(out)
 }
 
 #[cfg(test)]

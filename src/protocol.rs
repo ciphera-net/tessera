@@ -1,3 +1,4 @@
+use std::fmt;
 use std::io::{self, Read, Write};
 
 use serde::{Deserialize, Serialize};
@@ -8,7 +9,9 @@ pub const MAX_FRAME: usize = 1024 * 1024;
 
 /// Requests from the Go SDK to the sidecar. Internally tagged by an `op` field whose value
 /// is the snake_case variant name, e.g. `{"op":"register_start", ...}`.
-#[derive(Debug, Serialize, Deserialize)]
+// Debug is implemented MANUALLY (below) to redact secret-bearing fields (password_file_b64). A blanket
+// #[derive(Debug)] would let an accidental future `eprintln!("{:?}", req)` leak the OPAQUE credential record.
+#[derive(Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
     RegisterStart {
@@ -35,7 +38,8 @@ pub enum Request {
 /// Responses from the sidecar to the Go SDK. Internally tagged by a `result` field whose
 /// value is the snake_case variant name, e.g. `{"result":"login_finish", ...}`. The
 /// `Error` variant carries a human-readable message.
-#[derive(Debug, Serialize, Deserialize)]
+// Debug is implemented MANUALLY (below) to redact secret-bearing fields (password_file_b64, session_key_b64).
+#[derive(Serialize, Deserialize)]
 #[serde(tag = "result", rename_all = "snake_case")]
 pub enum Response {
     RegisterStart {
@@ -55,6 +59,66 @@ pub enum Response {
         code: String,
         message: String,
     },
+}
+
+// Manual Debug impls redact secret-bearing fields so an accidental `{:?}` log never leaks the OPAQUE
+// credential record (password_file_b64) or a session key. Non-secret identifiers (credential_id,
+// login_id) are kept for debuggability; the bulky public OPAQUE blobs are omitted (`..`).
+impl fmt::Debug for Request {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Request::RegisterStart { credential_id, .. } => f
+                .debug_struct("RegisterStart")
+                .field("credential_id", credential_id)
+                .finish_non_exhaustive(),
+            Request::RegisterFinish { .. } => {
+                f.debug_struct("RegisterFinish").finish_non_exhaustive()
+            }
+            Request::LoginStart {
+                credential_id,
+                password_file_b64,
+                ..
+            } => f
+                .debug_struct("LoginStart")
+                .field("credential_id", credential_id)
+                .field(
+                    "password_file_b64",
+                    &password_file_b64.as_ref().map(|_| "<redacted>"),
+                )
+                .finish_non_exhaustive(),
+            Request::LoginFinish { login_id, .. } => f
+                .debug_struct("LoginFinish")
+                .field("login_id", login_id)
+                .finish_non_exhaustive(),
+        }
+    }
+}
+
+impl fmt::Debug for Response {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Response::RegisterStart { .. } => {
+                f.debug_struct("RegisterStart").finish_non_exhaustive()
+            }
+            Response::RegisterFinish { .. } => f
+                .debug_struct("RegisterFinish")
+                .field("password_file_b64", &"<redacted>")
+                .finish_non_exhaustive(),
+            Response::LoginStart { login_id, .. } => f
+                .debug_struct("LoginStart")
+                .field("login_id", login_id)
+                .finish_non_exhaustive(),
+            Response::LoginFinish { .. } => f
+                .debug_struct("LoginFinish")
+                .field("session_key_b64", &"<redacted>")
+                .finish_non_exhaustive(),
+            Response::Error { code, message } => f
+                .debug_struct("Error")
+                .field("code", code)
+                .field("message", message)
+                .finish(),
+        }
+    }
 }
 
 /// Write a length-prefixed frame: `[u32 big-endian length][payload]`. Flushes the writer so
