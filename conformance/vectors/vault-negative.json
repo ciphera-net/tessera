@@ -1,0 +1,42 @@
+{
+  "kitVersion": "1.0.0",
+  "suite": "0x01",
+  "generatedBy": "tessera-go harness/vectors/gen_go.go",
+  "vectors": [
+    {
+      "name": "bad-version",
+      "vaultKeyHex": "0101010101010101010101010101010101010101010101010101010101010101",
+      "context": "address",
+      "envelopeHex": "025c5b69cc36b8fa78c7d46d3547749a90fd1638e1ba04b72306b7d2241120b739ca689ee84ffb2c2b6f92a743bd4c3d3b0e7d3edce1f274ecc3347d4389fe21d66de3b5e999b5f0323cb23f9a076d820e73dc55aa4fe8eb07ba2c1c7904e99ef19a724b1eac",
+      "expect": "UnsupportedVersion"
+    },
+    {
+      "name": "truncated",
+      "vaultKeyHex": "0101010101010101010101010101010101010101010101010101010101010101",
+      "context": "address",
+      "envelopeHex": "015c5b69cc36b8fa78c7d46d3547749a90fd1638e1ba04b72306b7d2241120b739ca689ee84ffb2c2b6f92a743bd4c3d3b0e7d3edce1f274ecc3347d4389fe21d66de3b5e999b5f0323cb23f9a076d820e73dc55aa4fe8eb",
+      "expect": "Malformed"
+    },
+    {
+      "name": "tampered-tag",
+      "vaultKeyHex": "0101010101010101010101010101010101010101010101010101010101010101",
+      "context": "address",
+      "envelopeHex": "015c5b69cc36b8fa78c7d46d3547749a90fd1638e1ba04b72306b7d2241120b739ca689ee84ffb2c2b6f92a743bd4c3d3b0e7d3edce1f274ecc3347d4389fe21d66de3b5e999b5f0323cb23f9a076d820e73dc55aa4fe8eb07ba2c1c7904e99ef19a724b1ead",
+      "expect": "Malformed"
+    },
+    {
+      "name": "wrong-context",
+      "vaultKeyHex": "0101010101010101010101010101010101010101010101010101010101010101",
+      "context": "totp",
+      "envelopeHex": "015c5b69cc36b8fa78c7d46d3547749a90fd1638e1ba04b72306b7d2241120b739ca689ee84ffb2c2b6f92a743bd4c3d3b0e7d3edce1f274ecc3347d4389fe21d66de3b5e999b5f0323cb23f9a076d820e73dc55aa4fe8eb07ba2c1c7904e99ef19a724b1eac",
+      "expect": "Malformed"
+    },
+    {
+      "name": "wrong-key",
+      "vaultKeyHex": "0202020202020202020202020202020202020202020202020202020202020202",
+      "context": "address",
+      "envelopeHex": "015c5b69cc36b8fa78c7d46d3547749a90fd1638e1ba04b72306b7d2241120b739ca689ee84ffb2c2b6f92a743bd4c3d3b0e7d3edce1f274ecc3347d4389fe21d66de3b5e999b5f0323cb23f9a076d820e73dc55aa4fe8eb07ba2c1c7904e99ef19a724b1eac",
+      "expect": "Malformed"
+    }
+  ]
+}
