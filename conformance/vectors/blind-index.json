@@ -1,0 +1,27 @@
+{
+  "kitVersion": "1.0.0",
+  "suite": "0x01",
+  "generatedBy": "tessera-go harness/vectors/gen_go.go",
+  "vectors": [
+    {
+      "email": "user@example.com",
+      "blindIndexBase64Url": "A3_Z30mos_Wp-w28gAUKtci-ziR9YH-cq-nBKB1WVqQ"
+    },
+    {
+      "email": "Alice@Example.ORG",
+      "blindIndexBase64Url": "MQZmQuP38eyxFzcM07hFgGl6YYy7zsxeCx2bupUmsM8"
+    },
+    {
+      "email": " bob+tag@gmail.com ",
+      "blindIndexBase64Url": "wu6MYF8V7tYWQ81nSDOzhj-Yj-KQfd8Eyd3W656tLG4"
+    },
+    {
+      "email": "USER@EXAMPLE.COM",
+      "blindIndexBase64Url": "A3_Z30mos_Wp-w28gAUKtci-ziR9YH-cq-nBKB1WVqQ"
+    },
+    {
+      "email": "  Alice@Example.ORG  ",
+      "blindIndexBase64Url": "MQZmQuP38eyxFzcM07hFgGl6YYy7zsxeCx2bupUmsM8"
+    }
+  ]
+}
