@@ -5,23 +5,58 @@
   "vectors": [
     {
       "email": "user@example.com",
+      "normalizedEmail": "user@example.com",
       "blindIndexBase64Url": "A3_Z30mos_Wp-w28gAUKtci-ziR9YH-cq-nBKB1WVqQ"
     },
     {
       "email": "Alice@Example.ORG",
+      "normalizedEmail": "alice@example.org",
       "blindIndexBase64Url": "MQZmQuP38eyxFzcM07hFgGl6YYy7zsxeCx2bupUmsM8"
     },
     {
       "email": " bob+tag@gmail.com ",
+      "normalizedEmail": "bob+tag@gmail.com",
       "blindIndexBase64Url": "wu6MYF8V7tYWQ81nSDOzhj-Yj-KQfd8Eyd3W656tLG4"
     },
     {
       "email": "USER@EXAMPLE.COM",
+      "normalizedEmail": "user@example.com",
       "blindIndexBase64Url": "A3_Z30mos_Wp-w28gAUKtci-ziR9YH-cq-nBKB1WVqQ"
     },
     {
       "email": "  Alice@Example.ORG  ",
+      "normalizedEmail": "alice@example.org",
       "blindIndexBase64Url": "MQZmQuP38eyxFzcM07hFgGl6YYy7zsxeCx2bupUmsM8"
+    },
+    {
+      "email": "\tuser@example.com\n",
+      "normalizedEmail": "user@example.com",
+      "blindIndexBase64Url": "A3_Z30mos_Wp-w28gAUKtci-ziR9YH-cq-nBKB1WVqQ"
+    },
+    {
+      "email": "  spaced.out@example.com  ",
+      "normalizedEmail": "spaced.out@example.com",
+      "blindIndexBase64Url": "cPnyHwpNixeomMn9VSXUmN60jBE-_OPtGBqzSD7w6Cg"
+    },
+    {
+      "email": "a.very.long.local.part.exceeding.normal.length@subdomain.example.museum",
+      "normalizedEmail": "a.very.long.local.part.exceeding.normal.length@subdomain.example.museum",
+      "blindIndexBase64Url": "skHD24QQjN4zYSrCgBSH2MQjO9IwMs90n5vG1Rm25kc"
+    },
+    {
+      "email": "multi+tag+two@gmail.com",
+      "normalizedEmail": "multi+tag+two@gmail.com",
+      "blindIndexBase64Url": "NU4GmTJgLxpB_n1qk7H_pdXfPCBruWa4Fgw-KG_MjKA"
+    },
+    {
+      "email": "José@example.com",
+      "normalizedEmail": "josé@example.com",
+      "blindIndexBase64Url": "wgYW2R5QF8aGB3bCdxn770BcTa4ijhZKTGmRJMK-ZB4"
+    },
+    {
+      "email": "ZÜRICH@example.com",
+      "normalizedEmail": "zürich@example.com",
+      "blindIndexBase64Url": "RvXY04wsFy5etFAp0oC-6zCeUgv8980cetIPz4TfPNY"
     }
   ]
 }
