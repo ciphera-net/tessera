@@ -1,24 +1,26 @@
-# Tessera Phase 4 Parity Vectors — Schema and Pinned Constants
+# Tessera Conformance Vectors — Schema and Pinned Constants
 
-This document is the contract for Phase 4 implementers. It defines the vector files in this
-directory, all pinned algorithm constants, and the parity guarantees each vector type provides.
+> **Status:** Self-reviewed by the Ciphera team; NOT independently audited.
+
+This document defines the vector files in this directory, all pinned algorithm constants, and the
+parity guarantees each vector type provides. For the language-neutral conformance **procedure** (what
+an implementation must DO with each file), see [`CONFORMANCE.md`](./CONFORMANCE.md).
 
 ## Files
 
-| File | Purpose |
-|------|---------|
-| `blind-index.json` | Blind-index parity vectors (byte-exact, deterministic) |
-| `vault.json` | Vault envelope parity vectors (Open-parity only — see note below) |
+Each file begins with a versioned header object — `{ "kitVersion", "suite", "generatedBy", "vectors": [...] }`.
 
-Vectors are validated by `packages/tessera-ts/test/vectors.test.ts` (vitest). Run:
+| File | Purpose | KAT fields |
+|------|---------|-----------|
+| `blind-index.json` | Blind-index parity (byte-exact, deterministic) | `normalizedEmail` |
+| `vault.json` | Vault envelope (Open-parity; see note below) | `kekHex` |
+| `vault-negative.json` | Vault rejection vectors (`expect`: `UnsupportedVersion` \| `Malformed`) | — |
+| `vmk-wrap.json` | VMK-wrap envelope — **browser-only** (no Go side); Open-parity | `wrapKekHex` |
 
-```
-cd packages/tessera-ts && npx vitest run test/vectors.test.ts
-```
-
-The Go generator at `harness/vectors/gen_go.go` regenerates both files and performs an
-in-process round-trip assertion before writing output. It is authoritative for the blind-index
-values.
+Verifiers: `tessera-go` `conformance_test.go` (`go test -tags conformance`, white-box) and
+`tessera-ts` `packages/tessera-ts/test/vectors.test.ts` (vitest). Generators (maintainers only):
+`tessera-go/harness/vectors/gen_go.go` (blind-index / vault / negative; authoritative + round-trip
+self-check) and `tessera-ts/harness/vmk-vectors/gen_vmk.ts` (vmk-wrap; self-checks the wrap-KEK).
 
 ---
 
