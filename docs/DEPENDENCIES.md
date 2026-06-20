@@ -1,7 +1,5 @@
 # Tessera Dependencies & Supply Chain
 
-> **Status:** Self-reviewed by the Ciphera team; NOT independently audited.
-
 Tessera composes **vetted, externally-audited primitives** and concentrates its originality in the layer
 above them (protocol integration, cross-language parity, misuse-resistant API). It implements **no new
 cryptographic primitives**. This document inventories the security-relevant dependencies and states the

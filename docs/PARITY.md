@@ -1,7 +1,5 @@
 # Tessera Cross-Language Parity — Evidence
 
-> **Status:** Self-reviewed by the Ciphera team; NOT independently audited.
-
 Tessera's central technical risk is **silent cross-language divergence**: the Go server SDK, the
 TypeScript/WASM browser SDK, and the Rust core/sidecar must agree byte-for-byte, or a user who registers
 in the browser cannot be authenticated by the server. This document records how that parity is *proven*,

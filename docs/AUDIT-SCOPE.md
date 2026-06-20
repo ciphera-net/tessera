@@ -1,6 +1,6 @@
 # Tessera — Audit Scope & Non-Goals
 
-> **Status:** Self-reviewed by the Ciphera team; NOT independently audited. This document scopes the
+> **Status:** Self-reviewed by the Ciphera team; not yet independently audited. This document scopes the
 > system for a *future* external reviewer; today the only review performed is our internal self-audit
 > ([`SELF-AUDIT.md`](./SELF-AUDIT.md)).
 

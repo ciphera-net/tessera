@@ -1,6 +1,6 @@
 # Tessera Protocol & Wire Specification — v1 (suite `0x01`)
 
-> **Status:** Self-reviewed by the Ciphera team; NOT independently audited.
+> **Status:** Self-reviewed by the Ciphera team; not yet independently audited.
 
 This is the human-readable specification of the Tessera v1 cryptographic contract: the OPAQUE auth suite,
 the blind index, the vault and VMK-wrap envelopes, the sidecar wire protocol, and the encodings. The

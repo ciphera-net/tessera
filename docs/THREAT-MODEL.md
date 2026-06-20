@@ -1,6 +1,6 @@
 # Tessera Threat Model — v1
 
-> **Status:** Self-reviewed by the Ciphera team; NOT independently audited.
+> **Status:** Self-reviewed by the Ciphera team; not yet independently audited.
 
 This is the consolidated threat model for Tessera v1 (suite `0x01`). It states the adversaries Tessera
 defends against, the guarantees it provides, and — as importantly — the honest limits it does **not**

@@ -1,7 +1,5 @@
 # Tessera Conformance Kit — Procedure
 
-> **Status:** Self-reviewed by the Ciphera team; NOT independently audited.
-
 This document is the **language-neutral conformance procedure** for the Tessera cryptographic contract.
 Any implementation (Go, TypeScript/WASM, or a future Rust/Python/Swift port) can self-check against the
 checked-in vectors with **no help from us**: reproduce the deterministic values byte-for-byte, open the

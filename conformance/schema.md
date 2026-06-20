@@ -1,7 +1,5 @@
 # Tessera Conformance Vectors — Schema and Pinned Constants
 
-> **Status:** Self-reviewed by the Ciphera team; NOT independently audited.
-
 This document defines the vector files in this directory, all pinned algorithm constants, and the
 parity guarantees each vector type provides. For the language-neutral conformance **procedure** (what
 an implementation must DO with each file), see [`CONFORMANCE.md`](./CONFORMANCE.md).

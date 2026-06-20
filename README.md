@@ -10,11 +10,11 @@ This repository (`ciphera-net/tessera`) is the **Rust core**: the OPAQUE cipher 
 conformance kit, and the specification & audit documents. It powers Ciphera ID, and it is
 built to be self-hosted and adopted by anyone.
 
-> [!IMPORTANT]
-> **Security status: self-reviewed, NOT independently audited.** Tessera has had a rigorous
-> internal self-audit (see [`docs/SELF-AUDIT.md`](./docs/SELF-AUDIT.md)) but **no third-party
-> audit yet**. Read [`docs/SPEC.md`](./docs/SPEC.md) and [`docs/THREAT-MODEL.md`](./docs/THREAT-MODEL.md),
-> and review the code, before relying on it for anything critical.
+> [!NOTE]
+> **Security status: self-reviewed; not yet independently audited.** Tessera has had a rigorous
+> internal self-audit (see [`docs/SELF-AUDIT.md`](./docs/SELF-AUDIT.md)). Read [`docs/SPEC.md`](./docs/SPEC.md)
+> and [`docs/THREAT-MODEL.md`](./docs/THREAT-MODEL.md), and review the code, before relying on it
+> for anything critical.
 
 ## What it provides
 

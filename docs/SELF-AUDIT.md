@@ -1,6 +1,6 @@
 # Tessera Self-Audit Report — Phase 4
 
-> **Status:** Self-reviewed by the Ciphera team; **NOT independently audited.** This is an internal
+> **Status:** Self-reviewed by the Ciphera team; not yet independently audited. This is an internal
 > adversarial review, not a substitute for a third-party audit. It records what we tried to break, what
 > held, what we found, what we fixed, and the limits we know remain.
 

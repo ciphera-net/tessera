@@ -1,9 +1,8 @@
 # Tessera — Documentation & Audit Package
 
-> **Status:** Self-reviewed by the Ciphera team; **NOT independently audited.** Tessera is open-source
+> **Status:** Self-reviewed by the Ciphera team; not yet independently audited. Tessera is open-source
 > zero-knowledge identity software (OPAQUE auth + a client-encrypted vault). It has had a rigorous
-> internal self-audit but **no third-party audit yet** — read the spec and threat model, and review the
-> code, before relying on it.
+> internal self-audit — read the spec and threat model, and review the code, before relying on it.
 
 This package is the auditor-facing (and eventual public) doc set for Tessera v1 (suite `0x01`). It is
 designed to be hand-off-ready: an external reviewer (or a community auditor) receives these documents,

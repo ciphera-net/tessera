@@ -1,8 +1,8 @@
 # Security Policy
 
-> **Status:** Self-reviewed by the Ciphera team; NOT independently audited. This is open-source
-> cryptographic software with **no third-party audit yet** — review the code and the threat model
-> ([`THREAT-MODEL.md`](./THREAT-MODEL.md)) before relying on it.
+> **Status:** Self-reviewed by the Ciphera team; not yet independently audited. This is open-source
+> cryptographic software — review the code and the threat model ([`THREAT-MODEL.md`](./THREAT-MODEL.md))
+> before relying on it.
 
 ## Reporting a vulnerability
 
