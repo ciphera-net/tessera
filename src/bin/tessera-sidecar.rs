@@ -97,8 +97,8 @@ fn serve(socket_path: &str, setup_path: &str) {
             match e.kind() {
                 io::ErrorKind::PermissionDenied => eprintln!(
                     "FATAL: cannot read server setup at {setup_path}: permission denied. The container \
-                     runs as nonroot (uid 65532); ensure the Vault-rendered 0400 secret is owned by / \
-                     readable by that uid (see deploy/tessera-sidecar.nomad.hcl checklist)."
+                     runs as nonroot (uid 65532); ensure the 0400 ServerSetup secret is owned by / \
+                     readable by that uid."
                 ),
                 io::ErrorKind::NotFound => eprintln!(
                     "FATAL: server setup not found at {setup_path}. Did the Vault template render?"

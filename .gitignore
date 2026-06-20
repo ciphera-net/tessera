@@ -1,1 +1,11 @@
 /target/
+
+# Secrets / key material — never commit (OPAQUE ServerSetup is Vault-only)
+*.bin
+*.pem
+*.key
+*.p12
+*.pfx
+.env
+.env.*
+server-setup*
