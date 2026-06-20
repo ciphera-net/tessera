@@ -98,6 +98,6 @@ redistribute it, including in proprietary products, subject to the license terms
 ## Export notice
 
 This distribution includes cryptographic software (OPAQUE / ristretto255 / Argon2id / AES-256-GCM).
-It is published as open source under the publicly-available exemption of the U.S. Export
-Administration Regulations (EAR §742.15(b)); the country of origin and applicable local export laws
-may still apply to your use.
+It is published as open-source, publicly-available software. Under EU Regulation (EU) 2021/821
+(the dual-use recast), software that is "in the public domain" / publicly available is generally
+outside the scope of export controls. Your own local laws may still apply to your use.
