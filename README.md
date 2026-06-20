@@ -50,6 +50,17 @@ delegated to vetted libraries ([`opaque-ke`](https://crates.io/crates/opaque-ke)
 | [`ciphera-net/tessera-go`](https://github.com/ciphera-net/tessera-go) | Go server SDK |
 | [`ciphera-net/tessera-ts`](https://github.com/ciphera-net/tessera-ts) (`@ciphera-net/tessera`) | Browser SDK (WASM OPAQUE + WebCrypto vault) |
 
+## Add it to your project
+
+Published on [crates.io](https://crates.io/crates/ciphera-tessera):
+
+```bash
+cargo add ciphera-tessera
+```
+
+The library is exposed as the `tessera` crate (`use tessera::…`); the server-side handshake
+binary is `tessera-sidecar`. To build from source instead, see below.
+
 ## Build & test
 
 ```bash
