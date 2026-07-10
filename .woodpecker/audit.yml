@@ -1,0 +1,11 @@
+when:
+  - event: push
+    branch: main
+  - event: pull_request
+
+steps:
+  audit:
+    image: rust:1
+    commands:
+      - cargo install cargo-audit --locked
+      - cargo audit
