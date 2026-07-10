@@ -3,6 +3,7 @@ when:
     branch: main
   - event: pull_request
 
+# cargo-audit scans Cargo.lock against the RustSec advisory database
 steps:
   audit:
     image: rust:1
