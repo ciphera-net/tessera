@@ -1,3 +1,13 @@
+# Routes this workflow to the in-cluster Kubernetes agent, which advertises
+# `!runner=k8s` — a MANDATORY label, so an agent is only eligible when a task
+# asks for it. Deleting this line sends the workflow back to the ci-ops Docker
+# agent; that is the rollback, and it is one line.
+#
+# This repo builds no container image, so there is nothing else to convert: no
+# buildx plugin, no registry push, no extra_hosts, no repo trust needed.
+labels:
+  runner: k8s
+
 when:
   - event: push
     branch: main
