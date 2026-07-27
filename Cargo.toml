@@ -1,11 +1,20 @@
 [package]
 name = "ciphera-tessera"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2024"
 rust-version = "1.85"
 license = "Apache-2.0"
 description = "Tessera — open-source zero-knowledge identity (OPAQUE) core and sidecar"
 repository = "https://github.com/ciphera-net/tessera"
+homepage = "https://ciphera.net/products/tessera"
+documentation = "https://docs.rs/ciphera-tessera"
+# * crates.io renders keywords/categories from the manifest of a published
+# * version — they cannot be edited on an existing release, so anything missing
+# * here stays missing until the next publish. Max 5 keywords, and every
+# * category must be an existing crates.io slug or the publish is rejected;
+# * both below were checked against /api/v1/categories.
+keywords = ["opaque", "pake", "authentication", "cryptography", "zero-knowledge"]
+categories = ["cryptography", "authentication"]
 
 [lib]
 name = "tessera"
