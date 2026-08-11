@@ -102,7 +102,9 @@ impl fmt::Debug for Request {
                 )
                 .finish_non_exhaustive(),
             Request::LoginFinish {
-                login_id, state_b64, ..
+                login_id,
+                state_b64,
+                ..
             } => f
                 .debug_struct("LoginFinish")
                 .field("login_id", login_id)

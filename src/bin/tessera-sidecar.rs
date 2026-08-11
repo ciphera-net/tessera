@@ -166,7 +166,14 @@ fn serve(socket_path: &str, setup_path: &str) {
                 let logins = Arc::clone(&logins);
                 std::thread::spawn(move || {
                     let _guard = guard; // decrements on thread exit
-                    handle_conn(stream, &setup, &state_key, logins, login_ttl, frame_deadline);
+                    handle_conn(
+                        stream,
+                        &setup,
+                        &state_key,
+                        logins,
+                        login_ttl,
+                        frame_deadline,
+                    );
                 });
             }
             Err(e) => eprintln!("accept error: {e}"),
@@ -221,10 +228,12 @@ fn handle_conn(
             Err(_) => return,   // deadline exceeded, bad frame, or I/O error
         };
         let resp = match serde_json::from_slice::<Request>(&frame) {
-            Ok(req) => dispatch(req, setup, state_key, &logins, ttl).unwrap_or_else(|e| Response::Error {
-                code: e.code().to_string(),
-                message: e.to_string(),
-            }),
+            Ok(req) => {
+                dispatch(req, setup, state_key, &logins, ttl).unwrap_or_else(|e| Response::Error {
+                    code: e.code().to_string(),
+                    message: e.to_string(),
+                })
+            }
             Err(e) => Response::Error {
                 code: "bad_request".to_string(),
                 message: format!("bad request json: {e}"),
@@ -379,7 +388,14 @@ mod tests {
             credential_id: "creds-1".into(),
         };
         // dispatch must accept a &ServerSetup that was parsed ONCE by the caller.
-        let resp = dispatch(req, &setup, &test_state_key(), &logins, Duration::from_secs(60)).unwrap();
+        let resp = dispatch(
+            req,
+            &setup,
+            &test_state_key(),
+            &logins,
+            Duration::from_secs(60),
+        )
+        .unwrap();
         assert!(matches!(resp, Response::RegisterStart { .. }));
     }
 

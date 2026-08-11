@@ -434,7 +434,8 @@ fn login_started_on_one_sidecar_finishes_on_another() {
             password_file_b64: Some(password_file_b64),
             credential_id: creds.into(),
         },
-    ) else {
+    )
+    else {
         panic!("expected LoginStart")
     };
     let c_login_fin = c_login

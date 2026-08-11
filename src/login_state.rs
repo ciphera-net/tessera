@@ -254,13 +254,8 @@ mod tests {
         let file = register_finish(&c_reg_fin.message.serialize()).unwrap();
 
         let c_login = ClientLogin::<TesseraCipherSuite>::start(&mut rng, b"pw").unwrap();
-        let (state, response) = login_start(
-            &setup,
-            Some(&file),
-            &c_login.message.serialize(),
-            b"creds",
-        )
-        .unwrap();
+        let (state, response) =
+            login_start(&setup, Some(&file), &c_login.message.serialize(), b"creds").unwrap();
 
         // Drive the client to a finalization so tests can complete a real login.
         let c_fin = c_login
@@ -313,7 +308,8 @@ mod tests {
         let raw = BASE64_STANDARD.decode(&sealed).unwrap();
         let state_bytes = state.serialize();
         assert!(
-            !raw.windows(state_bytes.len()).any(|w| w == &state_bytes[..]),
+            !raw.windows(state_bytes.len())
+                .any(|w| w == &state_bytes[..]),
             "the serialized ServerLogin must not appear in the sealed output"
         );
     }
@@ -321,7 +317,14 @@ mod tests {
     #[test]
     fn a_different_server_setup_cannot_open_it() {
         let (setup_bytes, state, _, _) = setup_and_state();
-        let sealed = seal(&LoginStateKey::derive(&setup_bytes), "login-1", &state, TTL, NOW).unwrap();
+        let sealed = seal(
+            &LoginStateKey::derive(&setup_bytes),
+            "login-1",
+            &state,
+            TTL,
+            NOW,
+        )
+        .unwrap();
 
         let other = LoginStateKey::derive(&new_server_setup());
         assert!(matches!(
@@ -379,7 +382,12 @@ mod tests {
     #[test]
     fn malformed_input_is_rejected_without_panicking() {
         let key = LoginStateKey::derive(&new_server_setup());
-        for bad in ["", "!!!not base64!!!", "AAAA", &BASE64_STANDARD.encode([2u8; 40])] {
+        for bad in [
+            "",
+            "!!!not base64!!!",
+            "AAAA",
+            &BASE64_STANDARD.encode([2u8; 40]),
+        ] {
             assert!(matches!(
                 open(&key, "login-1", bad, NOW),
                 Err(TesseraError::UnknownLogin)
