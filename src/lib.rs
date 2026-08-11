@@ -8,6 +8,7 @@
 pub mod blind_index;
 pub mod client;
 pub mod error;
+pub mod login_state;
 pub mod protocol;
 pub mod server;
 pub mod suite;

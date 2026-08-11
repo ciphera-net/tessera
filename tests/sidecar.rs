@@ -111,6 +111,7 @@ fn full_register_and_login_over_socket() {
     let Response::LoginStart {
         login_id,
         response_b64,
+        ..
     } = resp
     else {
         panic!("expected LoginStart, got {resp:?}")
@@ -130,6 +131,7 @@ fn full_register_and_login_over_socket() {
         &Request::LoginFinish {
             login_id,
             finalization_b64: BASE64_STANDARD.encode(c_login_finish.message.serialize()),
+            state_b64: None,
         },
     );
     let Response::LoginFinish { session_key_b64 } = resp else {
@@ -296,6 +298,7 @@ fn login_state_is_reaped_after_ttl() {
         &Request::LoginFinish {
             login_id,
             finalization_b64: BASE64_STANDARD.encode(b"ignored-after-reap"),
+            state_b64: None,
         },
     );
     // Assert specifically on the "unknown login" message so this test is falsifiable: before the
@@ -337,4 +340,147 @@ fn serve_with_missing_setup_exits_with_diagnostic() {
         stderr.contains("server setup not found"),
         "stderr must name the problem: {stderr}"
     );
+}
+
+/// Start a sidecar against an EXISTING setup file, so two processes can share one
+/// `ServerSetup` — the situation two Kubernetes replicas are in.
+fn start_sidecar_sharing_setup(
+    dir: &std::path::Path,
+    setup: &std::path::Path,
+    socket_name: &str,
+) -> (Sidecar, std::path::PathBuf) {
+    let socket = dir.join(socket_name);
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_tessera-sidecar"));
+    cmd.args(["serve", socket.to_str().unwrap(), setup.to_str().unwrap()]);
+    let guard = Sidecar(cmd.spawn().unwrap());
+    for _ in 0..50 {
+        if UnixStream::connect(&socket).is_ok() {
+            return (guard, socket);
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    panic!("sidecar did not start");
+}
+
+/// THE multi-replica test: process A starts a login, process B finishes it.
+///
+/// This is the property that lets id-backend run more than one replica. Before
+/// sealed login state, `ServerLogin` lived in A's memory behind a per-pod socket,
+/// so B could not finish A's login and roughly half of all logins failed — and
+/// failed *destructively*, because the caller counted them as wrong passwords and
+/// accrued account lockouts.
+///
+/// The two sidecars here share only the `ServerSetup` file, exactly as two pods
+/// share one Vault-rendered secret. They have separate memory and separate sockets.
+#[test]
+fn login_started_on_one_sidecar_finishes_on_another() {
+    let dir = tempfile::tempdir().unwrap();
+    let setup = dir.path().join("shared-setup.bin");
+    let status = Command::new(env!("CARGO_BIN_EXE_tessera-sidecar"))
+        .args(["gen-setup", setup.to_str().unwrap()])
+        .status()
+        .unwrap();
+    assert!(status.success());
+
+    let (_a, sock_a) = start_sidecar_sharing_setup(dir.path(), &setup, "a.sock");
+    let (_b, sock_b) = start_sidecar_sharing_setup(dir.path(), &setup, "b.sock");
+    let mut a = UnixStream::connect(&sock_a).unwrap();
+    let mut b = UnixStream::connect(&sock_b).unwrap();
+
+    let password = b"correct horse battery staple";
+    let creds = "creds-multi-replica";
+    let mut rng = OsRng;
+
+    // Register through A.
+    let c_reg = ClientRegistration::<TesseraCipherSuite>::start(&mut rng, password).unwrap();
+    let Response::RegisterStart { response_b64 } = send(
+        &mut a,
+        &Request::RegisterStart {
+            request_b64: BASE64_STANDARD.encode(c_reg.message.serialize()),
+            credential_id: creds.into(),
+        },
+    ) else {
+        panic!("expected RegisterStart")
+    };
+    let c_reg_fin = c_reg
+        .state
+        .finish(
+            &mut rng,
+            password,
+            RegistrationResponse::deserialize(&BASE64_STANDARD.decode(response_b64).unwrap())
+                .unwrap(),
+            ClientRegistrationFinishParameters::default(),
+        )
+        .unwrap();
+    let Response::RegisterFinish { password_file_b64 } = send(
+        &mut b, // deliberately the OTHER process: registration is stateless
+        &Request::RegisterFinish {
+            upload_b64: BASE64_STANDARD.encode(c_reg_fin.message.serialize()),
+        },
+    ) else {
+        panic!("expected RegisterFinish")
+    };
+
+    // Login START on A.
+    let c_login = ClientLogin::<TesseraCipherSuite>::start(&mut rng, password).unwrap();
+    let Response::LoginStart {
+        login_id,
+        response_b64,
+        state_b64,
+    } = send(
+        &mut a,
+        &Request::LoginStart {
+            request_b64: BASE64_STANDARD.encode(c_login.message.serialize()),
+            password_file_b64: Some(password_file_b64),
+            credential_id: creds.into(),
+        },
+    )
+    else {
+        panic!("expected LoginStart")
+    };
+    let c_login_fin = c_login
+        .state
+        .finish(
+            &mut rng,
+            password,
+            CredentialResponse::deserialize(&BASE64_STANDARD.decode(response_b64).unwrap())
+                .unwrap(),
+            ClientLoginFinishParameters::default(),
+        )
+        .unwrap();
+
+    // Login FINISH on B, which never saw the start.
+    let finalization_b64 = BASE64_STANDARD.encode(c_login_fin.message.serialize());
+    let resp = send(
+        &mut b,
+        &Request::LoginFinish {
+            login_id: login_id.clone(),
+            finalization_b64: finalization_b64.clone(),
+            state_b64: Some(state_b64),
+        },
+    );
+    let Response::LoginFinish { session_key_b64 } = resp else {
+        panic!("sealed state must let a second process finish the login, got {resp:?}")
+    };
+    assert_eq!(
+        BASE64_STANDARD.decode(session_key_b64).unwrap(),
+        c_login_fin.session_key.to_vec(),
+        "server and client must still agree on the session key across processes"
+    );
+
+    // The negative control: WITHOUT the sealed state, B cannot finish A's login.
+    // This is the exact failure that made a second replica unsafe, and it must
+    // still hold — otherwise this test would pass for the wrong reason.
+    let resp = send(
+        &mut b,
+        &Request::LoginFinish {
+            login_id,
+            finalization_b64,
+            state_b64: None,
+        },
+    );
+    let Response::Error { code, .. } = resp else {
+        panic!("legacy path on the wrong process must fail, got {resp:?}")
+    };
+    assert_eq!(code, "unknown_login");
 }

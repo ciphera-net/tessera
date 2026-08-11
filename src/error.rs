@@ -17,6 +17,12 @@ pub enum TesseraError {
 
     #[error("unknown login id")]
     UnknownLogin,
+
+    /// A server-side fault that is not the caller's doing — e.g. sealing login
+    /// state failed. Distinct from `Protocol`, which means the caller sent
+    /// something malformed, so the two map to different HTTP classes (500 vs 400).
+    #[error("internal error: {0}")]
+    Internal(String),
 }
 
 impl TesseraError {
@@ -40,7 +46,7 @@ impl TesseraError {
                 // LibraryError (and the uninhabited Custom) — an internal crypto fault (500).
                 _ => "internal",
             },
-            TesseraError::Io(_) => "internal",
+            TesseraError::Io(_) | TesseraError::Internal(_) => "internal",
         }
     }
 }
