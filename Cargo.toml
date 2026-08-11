@@ -1,6 +1,6 @@
 [package]
 name = "ciphera-tessera"
-version = "0.0.2"
+version = "0.0.3"
 edition = "2024"
 rust-version = "1.85"
 license = "Apache-2.0"
@@ -31,6 +31,12 @@ rand = "=0.8.6"  # pinned: opaque-ke 4.x binds rand_core 0.6 (= rand 0.8); rand 
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = "=1.0.150"
 base64 = "=0.22.1"
+# Sealed login state (src/login_state.rs). XChaCha20-Poly1305 for its 192-bit
+# nonce: a stateless sealer cannot keep a counter, so random nonces must be safe.
+chacha20poly1305 = "=0.10.1"
+# HKDF-SHA512 derives the sealing key from the ServerSetup, so no second secret
+# has to be distributed to every replica or rotated in lockstep with the first.
+hkdf = "=0.12.4"
 thiserror = "=1.0.69"
 zeroize = "=1.8.2"  # zero intermediate export_key/session_key copies (opaque-ke FinishResult is not ZeroizeOnDrop)
 

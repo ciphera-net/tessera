@@ -26,6 +26,9 @@ built to be self-hosted and adopted by anyone.
   recover or rotate credentials without the server ever seeing key material.
 - **Blind index** — accounts are looked up by an irreversible keyed hash of the email, so the
   server can find an account without storing the address.
+- **Sealed login state** — the in-flight server state for a login is handed back to the caller as
+  ciphertext, so any process holding the same ServerSetup can finish a login another one started.
+  The sidecar stays stateless and needs no database of its own.
 
 ## Cryptographic suite (v1, suite byte `0x01`)
 
@@ -85,6 +88,37 @@ tessera-sidecar serve /run/tessera/tessera.sock /path/to/server-setup.bin
 
 Optional tuning via env vars: `TESSERA_FRAME_DEADLINE_MS`, `TESSERA_LOGIN_TTL_MS`,
 `TESSERA_MAX_CONNECTIONS`.
+
+### Running more than one sidecar
+
+A login is two requests — `login_start` and `login_finish` — and the server state between them
+has to live somewhere. Historically it lived in the sidecar's memory, which quietly made those two
+requests inseparable from one process: a second replica could not finish a login the first one
+started, and a restart killed everything in flight.
+
+`login_start` now also returns **`state_b64`**, that state sealed with XChaCha20-Poly1305 under a
+key derived (HKDF-SHA512) from your ServerSetup. Store it wherever you already store the
+`login_id`, and pass it back to `login_finish`:
+
+```text
+login_start  -> { login_id, response_b64, state_b64 }
+                  store (login_id -> state_b64) in your datastore
+login_finish <- { login_id, finalization_b64, state_b64 }
+```
+
+Your datastore holds ciphertext it cannot open, and every replica that loads the same ServerSetup
+derives the same key — so any of them can finish any login. **This is the only supported way to
+run more than one replica.** Omitting `state_b64` selects the legacy in-memory path, which is
+deprecated and only works against the process that served `login_start`.
+
+Sealed state expires after `TESSERA_LOGIN_TTL_MS` (default 60s) and is bound to its `login_id`, so
+it cannot be replayed against a different login. It is **not** single-use on its own — consume
+your own `login_id` record exactly once (e.g. a Redis `GETDEL`) to prevent replay.
+
+An expired, tampered-with, or mismatched state all return the same `unknown_login` error code,
+deliberately without distinguishing which. Treat that code as *"this ceremony is over, start a new
+one"* — **not** as a failed password. Counting it as a credential failure means a correct password
+can accrue account lockouts.
 
 > The ServerSetup is the only long-term server secret. It must **never** be committed to source
 > control — `.gitignore` excludes `*.bin` / `server-setup*` as a guard. Treat its loss/exposure

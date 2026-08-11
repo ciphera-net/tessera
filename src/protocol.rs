@@ -32,6 +32,16 @@ pub enum Request {
     LoginFinish {
         login_id: String,
         finalization_b64: String,
+        /// The sealed `ServerLogin` returned by `LoginStart` (see
+        /// [`crate::login_state`]). When present the sidecar opens it and needs
+        /// no state of its own, so any process holding the same `ServerSetup`
+        /// can finish this login.
+        ///
+        /// `None` selects the legacy in-memory path, where only the process that
+        /// served `LoginStart` can finish — kept for existing clients and
+        /// DEPRECATED. New callers should always send it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        state_b64: Option<String>,
     },
 }
 
@@ -51,6 +61,11 @@ pub enum Response {
     LoginStart {
         login_id: String,
         response_b64: String,
+        /// The sealed `ServerLogin` for this ceremony. Store it alongside
+        /// `login_id` and send it back with `LoginFinish`. It is ciphertext under
+        /// a key derived from the `ServerSetup`, so the store never sees the
+        /// server's key-exchange state.
+        state_b64: String,
     },
     LoginFinish {
         session_key_b64: String,
@@ -86,9 +101,12 @@ impl fmt::Debug for Request {
                     &password_file_b64.as_ref().map(|_| "<redacted>"),
                 )
                 .finish_non_exhaustive(),
-            Request::LoginFinish { login_id, .. } => f
+            Request::LoginFinish {
+                login_id, state_b64, ..
+            } => f
                 .debug_struct("LoginFinish")
                 .field("login_id", login_id)
+                .field("state_b64", &state_b64.as_ref().map(|_| "<redacted>"))
                 .finish_non_exhaustive(),
         }
     }
@@ -107,6 +125,7 @@ impl fmt::Debug for Response {
             Response::LoginStart { login_id, .. } => f
                 .debug_struct("LoginStart")
                 .field("login_id", login_id)
+                .field("state_b64", &"<redacted>")
                 .finish_non_exhaustive(),
             Response::LoginFinish { .. } => f
                 .debug_struct("LoginFinish")

@@ -9,13 +9,14 @@ use std::io::{self, Read};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use base64::prelude::*;
 use opaque_ke::{ServerLogin, ServerSetup};
 use rand::RngCore;
 
 use tessera::TesseraError;
+use tessera::login_state::{LoginStateKey, open, seal};
 use tessera::protocol::{MAX_FRAME, Request, Response, write_frame};
 use tessera::server::{login_finish, login_start, register_finish, register_start};
 use tessera::suite::{TesseraCipherSuite, load_server_setup, new_server_setup};
@@ -50,6 +51,17 @@ impl Drop for ConnGuard {
 type LoginEntry = (ServerLogin<TesseraCipherSuite>, Instant);
 type LoginMap = Arc<Mutex<HashMap<String, LoginEntry>>>;
 type SharedSetup = Arc<ServerSetup<TesseraCipherSuite>>;
+type SharedStateKey = Arc<LoginStateKey>;
+
+/// Wall-clock milliseconds. Sealed login state carries an absolute expiry, so it
+/// needs a clock every process agrees on rather than a per-process `Instant`.
+/// A clock jumping backwards only ever makes state expire late, never early.
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
 
 /// Lock the login map, recovering the guard if a previous holder panicked. The map is a cache
 /// of independent in-flight `ServerLogin` states, so a poisoned lock does not imply corrupted
@@ -110,6 +122,11 @@ fn serve(socket_path: &str, setup_path: &str) {
     };
     let setup: SharedSetup =
         Arc::new(load_server_setup(&setup_bytes).expect("server setup is valid"));
+    // Derive the login-state sealing key BEFORE the raw bytes go away — deriving
+    // it here means the long-term secret is not kept around a second time just to
+    // seal short-lived state. Every replica loading the same ServerSetup derives
+    // the same key, which is what lets one finish another's login.
+    let state_key: SharedStateKey = Arc::new(LoginStateKey::derive(&setup_bytes));
     drop(setup_bytes); // the parsed setup is the source of truth from here on
 
     let frame_deadline = env_duration_ms("TESSERA_FRAME_DEADLINE_MS", DEFAULT_FRAME_DEADLINE);
@@ -145,10 +162,11 @@ fn serve(socket_path: &str, setup_path: &str) {
                 }
                 let guard = ConnGuard(Arc::clone(&active));
                 let setup = Arc::clone(&setup);
+                let state_key = Arc::clone(&state_key);
                 let logins = Arc::clone(&logins);
                 std::thread::spawn(move || {
                     let _guard = guard; // decrements on thread exit
-                    handle_conn(stream, &setup, logins, login_ttl, frame_deadline);
+                    handle_conn(stream, &setup, &state_key, logins, login_ttl, frame_deadline);
                 });
             }
             Err(e) => eprintln!("accept error: {e}"),
@@ -191,6 +209,7 @@ fn read_framed_request(
 fn handle_conn(
     mut stream: UnixStream,
     setup: &ServerSetup<TesseraCipherSuite>,
+    state_key: &LoginStateKey,
     logins: LoginMap,
     ttl: Duration,
     frame_deadline: Duration,
@@ -202,7 +221,7 @@ fn handle_conn(
             Err(_) => return,   // deadline exceeded, bad frame, or I/O error
         };
         let resp = match serde_json::from_slice::<Request>(&frame) {
-            Ok(req) => dispatch(req, setup, &logins, ttl).unwrap_or_else(|e| Response::Error {
+            Ok(req) => dispatch(req, setup, state_key, &logins, ttl).unwrap_or_else(|e| Response::Error {
                 code: e.code().to_string(),
                 message: e.to_string(),
             }),
@@ -226,6 +245,7 @@ fn handle_conn(
 fn dispatch(
     req: Request,
     setup: &ServerSetup<TesseraCipherSuite>,
+    state_key: &LoginStateKey,
     logins: &LoginMap,
     ttl: Duration,
 ) -> Result<Response, TesseraError> {
@@ -260,6 +280,15 @@ fn dispatch(
             let (state, response) =
                 login_start(setup, file.as_deref(), &request, credential_id.as_bytes())?;
             let login_id = random_id();
+
+            // Seal the state so ANY process holding the same ServerSetup can
+            // finish this login. This is what makes the sidecar horizontally
+            // scalable without giving it a datastore of its own.
+            let state_b64 = seal(state_key, &login_id, &state, ttl, now_ms())?;
+
+            // The in-memory copy serves clients that do not send `state_b64`
+            // back. DEPRECATED — remove it, and this map, once no such client
+            // remains; the sealed path makes it redundant.
             {
                 let mut map = lock_logins(logins);
                 prune_expired(&mut map, ttl);
@@ -268,17 +297,25 @@ fn dispatch(
             Ok(Response::LoginStart {
                 login_id,
                 response_b64: BASE64_STANDARD.encode(response),
+                state_b64,
             })
         }
         Request::LoginFinish {
             login_id,
             finalization_b64,
+            state_b64,
         } => {
             let finalization = BASE64_STANDARD.decode(finalization_b64)?;
-            let (state, _) = {
-                let mut map = lock_logins(logins);
-                prune_expired(&mut map, ttl);
-                map.remove(&login_id).ok_or(TesseraError::UnknownLogin)?
+            let state = match state_b64 {
+                // Stateless path: the caller returned the sealed state, so this
+                // process needs to have served the matching LoginStart.
+                Some(sealed) => open(state_key, &login_id, &sealed, now_ms())?,
+                // Legacy path: only the process that served LoginStart holds it.
+                None => {
+                    let mut map = lock_logins(logins);
+                    prune_expired(&mut map, ttl);
+                    map.remove(&login_id).ok_or(TesseraError::UnknownLogin)?.0
+                }
             };
             let session_key = login_finish(state, &finalization)?;
             Ok(Response::LoginFinish {
@@ -327,6 +364,10 @@ mod tests {
         Arc::new(Mutex::new(HashMap::new()))
     }
 
+    fn test_state_key() -> LoginStateKey {
+        LoginStateKey::derive(&new_server_setup())
+    }
+
     #[test]
     fn dispatch_register_start_uses_shared_setup() {
         let setup = load_server_setup(&new_server_setup()).unwrap();
@@ -338,7 +379,7 @@ mod tests {
             credential_id: "creds-1".into(),
         };
         // dispatch must accept a &ServerSetup that was parsed ONCE by the caller.
-        let resp = dispatch(req, &setup, &logins, Duration::from_secs(60)).unwrap();
+        let resp = dispatch(req, &setup, &test_state_key(), &logins, Duration::from_secs(60)).unwrap();
         assert!(matches!(resp, Response::RegisterStart { .. }));
     }
 
