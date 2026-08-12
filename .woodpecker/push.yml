@@ -78,6 +78,13 @@ steps:
   digest:
     image: alpine:3.20
     depends_on: [push]
+    # The SAME ClusterIP pin the push step needs. Learned the hard way on the
+    # first run (pipeline 28): push succeeded, then this step spent 135s failing
+    # to reach registry.ops.ciphera.net and exited 1. A pod dialling its own
+    # cluster's public NLB hits the Exoscale hairpin — any step that talks to the
+    # registry needs this, not just the one that pushes.
+    extra_hosts:
+      - "registry.ops.ciphera.net:10.101.182.27"
     backend_options:
       kubernetes:
         resources:
