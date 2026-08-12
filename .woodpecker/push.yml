@@ -1,0 +1,107 @@
+# Builds and publishes the tessera-sidecar image.
+#
+# WHY THIS FILE EXISTS (12-08-2026)
+#   The sidecar image was the only container in the estate with no pipeline: it
+#   was built and pushed by hand. So the image running in production drifted from
+#   this repo with nothing to detect it, and shipping any change to the OPAQUE
+#   server — including a security fix — depended on somebody remembering the
+#   exact `docker build` invocation. An image that only a person can produce is
+#   an image that stops matching its source.
+#
+#   It also blocked the id-backend replica increase: the sealed-login-state
+#   change is inert until a new sidecar image is live, and there was no
+#   supported way to produce one.
+#
+# ⚠️ REQUIRES TWO SECRETS THAT THIS REPO DOES NOT YET HAVE.
+#   `registry_username` and `registry_password`, exactly as every other
+#   image-publishing repo carries them (see ciphera-id, id-frontend, pulse-*).
+#   Until they are added at ci.ciphera.net → tessera → Settings → Secrets, this
+#   workflow fails at the push step. Nothing else is needed.
+#
+# Routes to the in-cluster Kubernetes agent, which advertises `!runner=k8s` — a
+# MANDATORY label, so an agent is only eligible when the task asks for it. A
+# workflow WITHOUT it is ineligible everywhere and queues PENDING FOREVER rather
+# than failing.
+labels:
+  runner: k8s
+
+# The image is not published unless the suite, clippy and rustfmt all pass.
+depends_on:
+  - test
+
+when:
+  - event: push
+    branch: main
+
+steps:
+  push:
+    image: woodpeckerci/plugin-kaniko:2.3.2@sha256:01e0e325efd8fd2b1a95d207e84780a85ed7f8eb9712d8e79888e0f42ff8b7b3
+    # Resources declared explicitly — without them the step pod is QoS
+    # BestEffort and is the first evicted under node memory pressure, which
+    # presents as a build failure rather than an eviction.
+    #
+    # 3Gi because this is a from-source Rust release build: rustc's own
+    # footprint sits on top of kaniko holding layers in memory, the same reason
+    # ciphera-id (Go) needed the override. request == limit so the scheduler's
+    # arithmetic bounds the node.
+    backend_options:
+      kubernetes:
+        resources:
+          requests:
+            memory: 3Gi
+          limits:
+            memory: 3Gi
+    # registry.ops.ciphera.net resolves to the cluster's own NLB, and a pod
+    # dialling its own cluster's load balancer hits the Exoscale hairpin —
+    # ~1/node_count of connections are black-holed, surfacing as
+    #   dial tcp 159.100.249.253:443: i/o timeout
+    # Pinning the name at Traefik's ClusterIP keeps the request inside the cluster.
+    extra_hosts:
+      - "registry.ops.ciphera.net:10.101.182.27"
+    settings:
+      registry: registry.ops.ciphera.net
+      repo: ciphera-net/tessera-sidecar
+      tags:
+        - sha-${CI_COMMIT_SHA:0:7}
+        - latest
+      username:
+        from_secret: registry_username
+      password:
+        from_secret: registry_password
+      # No build cache: kaniko's `cache`/`cache-repo` semantics differ from
+      # buildx's and guessing wrong silently creates a junk repository. A slower
+      # build, not a wrong one.
+
+  # The digest is what the id-backend manifest pins, and it is not derivable
+  # from the tag. Print it so the deploy step of the consuming repo — or a human
+  # updating id-backend.yaml — has the exact value to use.
+  digest:
+    image: alpine:3.20
+    depends_on: [push]
+    backend_options:
+      kubernetes:
+        resources:
+          requests: { memory: 128Mi, cpu: 100m }
+          limits: { memory: 512Mi }
+    environment:
+      REGISTRY_USERNAME:
+        from_secret: registry_username
+      REGISTRY_PASSWORD:
+        from_secret: registry_password
+    commands:
+      - apk add --no-cache curl >/dev/null
+      - |
+        TAG="sha-${CI_COMMIT_SHA:0:7}"
+        DIGEST=$(curl -fsS -I -u "$REGISTRY_USERNAME:$REGISTRY_PASSWORD" \
+          -H "Accept: application/vnd.oci.image.manifest.v1+json" \
+          -H "Accept: application/vnd.docker.distribution.manifest.v2+json" \
+          "https://registry.ops.ciphera.net/v2/ciphera-net/tessera-sidecar/manifests/$TAG" \
+          | tr -d '\r' | awk 'tolower($1)=="docker-content-digest:"{print $2}')
+        case "$DIGEST" in
+          sha256:*) ;;
+          *) echo "digest resolution failed for $TAG (got [$DIGEST])"; exit 1 ;;
+        esac
+        echo ""
+        echo "tessera-sidecar $TAG -> $DIGEST"
+        echo "Pin it in Infra/Kubernetes/workloads/id-backend/id-backend.yaml:"
+        echo "  image: registry.ops.ciphera.net/ciphera-net/tessera-sidecar@$DIGEST"
