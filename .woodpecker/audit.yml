@@ -25,6 +25,92 @@ steps:
         resources:
           requests: { memory: 2Gi, cpu: 1 }
           limits: { memory: 6Gi }
+    environment:
+      # ── sccache -> Exoscale SOS (migration phase 6, 21-08-2026) ───────────────
+      # Plan: Infra/docs/plans/20-08-2026-buildkit-rootless-migration.md §6
+      SCCACHE_BUCKET: ciphera-build-cache
+      # 🔴 SOVEREIGNTY TRIPWIRE. sccache's OWN docs state it plainly: without
+      # SCCACHE_ENDPOINT "sccache will default to AWS as the endpoint to hit".
+      # Measured 21-08 with the endpoint unset: it still PRINTS
+      #   Cache location  s3, name: ciphera-build-cache
+      # — a configured-looking line naming our bucket — and then does nothing:
+      # 0 hits, 0 misses, 0 ERRORS. It never says it is pointing at AWS. That is
+      # why the value is asserted in the commands below rather than trusted.
+      SCCACHE_ENDPOINT: https://sos-ch-dk-2.exo.io
+      SCCACHE_REGION: ch-dk-2
+      # Shared prefix across all Rust repos on purpose: sccache keys are content
+      # hashes, so dependency crates compiled under the stable CARGO_HOME
+      # (/usr/local/cargo in the rust image) can be shared between them.
+      SCCACHE_S3_KEY_PREFIX: sccache
+      RUSTC_WRAPPER: sccache
+      # 🔴 REQUIRED, NOT OPTIONAL. Incrementally compiled crates are NOT cacheable,
+      # and cargo enables incremental by default for workspace members in the debug
+      # profile. Without this sccache looks broken when it is merely misconfigured.
+      CARGO_INCREMENTAL: "0"
+      # ⚠️ CARGO_TARGET_DIR IS DELIBERATELY NOT SET, AND THAT IS A CORRECTION.
+      # The plan's §6 advice to point it at a neutral absolute path was aimed at
+      # caching the `target/` DIRECTORY. We are not doing that — sccache caches
+      # individual rustc invocations instead — and setting it here would MOVE the
+      # build output out from under steps that consume it by path:
+      #     tessera-ts/verify.yml:  $D/ciphera-tessera/target/release/tessera-sidecar
+      #     tessera-go/integration: $D/tessera-rust/target/release/tessera-sidecar
+      # Woodpecker's workspace path is already stable per repo, so the default
+      # <workspace>/target is stable too, which is all sccache needs.
+      # 🔑 Measured 21-08: sccache hashes the rustc invocation's ARGUMENTS, so
+      # identical source at a DIFFERENT path MISSES. Hits come from the workspace
+      # path being stable between pipelines of the same repo; cross-repo sharing is
+      # limited to dependency crates under the stable CARGO_HOME
+      # (/usr/local/cargo in the rust image).
+      # 🔴 ONE CREDENTIAL, AND THE SPLIT THAT WAS TRIED FIRST DOES NOT WORK.
+      # The intent was a read-write key on push/tag and a separate READ-ONLY key on
+      # pull_request, so a PR could warm the cache without holding a credential
+      # that can write it. Woodpecker rejects that outright: it validates EVERY
+      # referenced secret against the pipeline's event and fails the whole config —
+      #   secret "build_cache_key" is not allowed to be used with pipeline event "pull_request"
+      # — rather than leaving the variable empty. These steps run on BOTH events, so
+      # there is no arrangement in which a push-only and a PR-only secret coexist.
+      # ⇒ One key, permitted on all three events, with READ_ONLY enforced
+      #   CLIENT-SIDE on pull_request below. That enforcement is advisory, so the
+      #   honest statement is: a PR can write this cache. Accepted because the org
+      #   has ONE member and no forks, so the untrusted-contributor threat that
+      #   motivates a read-only key does not exist here. Revisit the day forks or a
+      #   second contributor are enabled.
+      CACHE_KEY_ID:
+        from_secret: build_cache_key
+      CACHE_KEY_SECRET:
+        from_secret: build_cache_secret
     commands:
+      - |
+        case "$SCCACHE_ENDPOINT" in
+          https://sos-*.exo.io) echo "sccache endpoint OK: $SCCACHE_ENDPOINT" ;;
+          *) echo "REFUSING: sccache endpoint '$SCCACHE_ENDPOINT' is not Exoscale SOS"; exit 1 ;;
+        esac
+      - |
+        if [ -n "$CACHE_KEY_ID" ]; then
+          export AWS_ACCESS_KEY_ID="$CACHE_KEY_ID" AWS_SECRET_ACCESS_KEY="$CACHE_KEY_SECRET"
+          if [ "$CI_PIPELINE_EVENT" = "pull_request" ]; then
+            export SCCACHE_S3_RW_MODE=READ_ONLY
+            echo "sccache: READ_ONLY (pull_request) — warms from the cache, does not write it"
+          else
+            echo "sccache: READ_WRITE ($CI_PIPELINE_EVENT)"
+          fi
+        else
+          echo "sccache: NO credential — compiling without a shared cache"
+          unset RUSTC_WRAPPER
+        fi
+      - |
+        # Checksum-pinned prebuilt binary, NOT `cargo install sccache` — the same
+        # security pattern this estate already uses for wasm-pack and its Go
+        # tarball, and it avoids compiling a build tool before every build.
+        SC=sccache-v0.17.0-x86_64-unknown-linux-musl
+        curl -fsSLO "https://github.com/mozilla/sccache/releases/download/v0.17.0/$SC.tar.gz"
+        echo "67c4a96dd237c1f518f6b36083f270f9976d516f1e57fce891755ea782e50006  $SC.tar.gz" | sha256sum -c -
+        tar xzf "$SC.tar.gz" && install -m0755 "$SC/sccache" /usr/local/bin/sccache
+        rm -rf "$SC" "$SC.tar.gz"
+        sccache --version
       - cargo install cargo-audit --locked
       - cargo audit
+      - |
+        # Report the hit rate rather than assume it. `|| true` because a stats
+        # read must never fail a green build.
+        sccache --show-stats 2>/dev/null | grep -E 'Cache hits|Cache misses|Cache errors|Cache hits rate' || true
