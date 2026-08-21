@@ -61,19 +61,24 @@ steps:
       # path being stable between pipelines of the same repo; cross-repo sharing is
       # limited to dependency crates under the stable CARGO_HOME
       # (/usr/local/cargo in the rust image).
-      # Two credentials, by event. The read-write key is scoped to push/tag; the
-      # read-only key is also exposed to pull_request so a PR can WARM from the
-      # cache without ever holding a credential that can write it. Verified
-      # 21-08 in both directions: the RO key reads, and put/delete return
-      # AccessDenied, as does any other bucket.
-      CACHE_RW_KEY:
+      # 🔴 ONE CREDENTIAL, AND THE SPLIT THAT WAS TRIED FIRST DOES NOT WORK.
+      # The intent was a read-write key on push/tag and a separate READ-ONLY key on
+      # pull_request, so a PR could warm the cache without holding a credential
+      # that can write it. Woodpecker rejects that outright: it validates EVERY
+      # referenced secret against the pipeline's event and fails the whole config —
+      #   secret "build_cache_key" is not allowed to be used with pipeline event "pull_request"
+      # — rather than leaving the variable empty. These steps run on BOTH events, so
+      # there is no arrangement in which a push-only and a PR-only secret coexist.
+      # ⇒ One key, permitted on all three events, with READ_ONLY enforced
+      #   CLIENT-SIDE on pull_request below. That enforcement is advisory, so the
+      #   honest statement is: a PR can write this cache. Accepted because the org
+      #   has ONE member and no forks, so the untrusted-contributor threat that
+      #   motivates a read-only key does not exist here. Revisit the day forks or a
+      #   second contributor are enabled.
+      CACHE_KEY_ID:
         from_secret: build_cache_key
-      CACHE_RW_SECRET:
+      CACHE_KEY_SECRET:
         from_secret: build_cache_secret
-      CACHE_RO_KEY:
-        from_secret: build_cache_ro_key
-      CACHE_RO_SECRET:
-        from_secret: build_cache_ro_secret
     commands:
       - |
         case "$SCCACHE_ENDPOINT" in
@@ -81,13 +86,14 @@ steps:
           *) echo "REFUSING: sccache endpoint '$SCCACHE_ENDPOINT' is not Exoscale SOS"; exit 1 ;;
         esac
       - |
-        if [ -n "$CACHE_RW_KEY" ]; then
-          export AWS_ACCESS_KEY_ID="$CACHE_RW_KEY" AWS_SECRET_ACCESS_KEY="$CACHE_RW_SECRET"
-          echo "sccache: READ_WRITE (push/tag)"
-        elif [ -n "$CACHE_RO_KEY" ]; then
-          export AWS_ACCESS_KEY_ID="$CACHE_RO_KEY" AWS_SECRET_ACCESS_KEY="$CACHE_RO_SECRET"
-          export SCCACHE_S3_RW_MODE=READ_ONLY
-          echo "sccache: READ_ONLY (pull_request) — warms from the cache, cannot write it"
+        if [ -n "$CACHE_KEY_ID" ]; then
+          export AWS_ACCESS_KEY_ID="$CACHE_KEY_ID" AWS_SECRET_ACCESS_KEY="$CACHE_KEY_SECRET"
+          if [ "$CI_PIPELINE_EVENT" = "pull_request" ]; then
+            export SCCACHE_S3_RW_MODE=READ_ONLY
+            echo "sccache: READ_ONLY (pull_request) — warms from the cache, does not write it"
+          else
+            echo "sccache: READ_WRITE ($CI_PIPELINE_EVENT)"
+          fi
         else
           echo "sccache: NO credential — compiling without a shared cache"
           unset RUSTC_WRAPPER
