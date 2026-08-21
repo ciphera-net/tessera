@@ -35,46 +35,68 @@ when:
 
 steps:
   push:
-    image: woodpeckerci/plugin-kaniko:2.3.2@sha256:01e0e325efd8fd2b1a95d207e84780a85ed7f8eb9712d8e79888e0f42ff8b7b3
-    # Resources declared explicitly — without them the step pod is QoS
-    # BestEffort and is the first evicted under node memory pressure, which
-    # presents as a build failure rather than an eviction.
-    #
-    # 3Gi because this is a from-source Rust release build: rustc's own
-    # footprint sits on top of kaniko holding layers in memory, the same reason
-    # ciphera-id (Go) needed the override. request == limit so the scheduler's
-    # arithmetic bounds the node.
+    image: moby/buildkit:v0.32.2@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8
+    # 🔑 Down from 3Gi request == 3Gi limit under kaniko — the compile moved into the shared daemon.
     backend_options:
       kubernetes:
         resources:
-          requests:
-            memory: 3Gi
-          limits:
-            memory: 3Gi
-    # registry.ops.ciphera.net resolves to the cluster's own NLB, and a pod
-    # dialling its own cluster's load balancer hits the Exoscale hairpin —
-    # ~1/node_count of connections are black-holed, surfacing as
-    #   dial tcp 159.100.249.253:443: i/o timeout
-    # Pinning the name at Traefik's ClusterIP keeps the request inside the cluster.
-    extra_hosts:
-      - "registry.ops.ciphera.net:10.101.182.27"
-    settings:
-      registry: registry.ops.ciphera.net
-      repo: ciphera-net/tessera-sidecar
-      tags:
-        - sha-${CI_COMMIT_SHA:0:7}
-        - latest
-      username:
+          requests: { memory: 256Mi, cpu: 200m }
+          limits: { memory: 768Mi }
+    # NOTE: `extra_hosts` is GONE and its absence is correct. The Exoscale NLB
+    # hairpin pin for registry.ops.ciphera.net moved to the DAEMON (hostAliases in
+    # buildkitd.yaml) because the DAEMON performs the push — buildctl only hands it
+    # the image name and forwards credentials over the session. Verified 21-08-2026
+    # from inside the daemon: GET https://registry.ops.ciphera.net/v2/ -> HTTP 401.
+    environment:
+      BUILDKIT_HOST: tcp://buildkitd.buildkit.svc.cluster.local:1234
+      CACHE_ENDPOINT: https://sos-ch-dk-2.exo.io
+      CACHE_BUCKET: ciphera-build-cache
+      CACHE_REGION: ch-dk-2
+      CACHE_NAME: tessera-sidecar
+      REGISTRY: registry.ops.ciphera.net
+      IMAGE_REPO: ciphera-net/tessera-sidecar
+      IMAGE_TAG: sha-${CI_COMMIT_SHA:0:7}
+      REGISTRY_USERNAME:
         from_secret: registry_username
-      password:
+      REGISTRY_PASSWORD:
         from_secret: registry_password
-      # No build cache: kaniko's `cache`/`cache-repo` semantics differ from
-      # buildx's and guessing wrong silently creates a junk repository. A slower
-      # build, not a wrong one.
-
-  # The digest is what the id-backend manifest pins, and it is not derivable
-  # from the tag. Print it so the deploy step of the consuming repo — or a human
-  # updating id-backend.yaml — has the exact value to use.
+    commands:
+      # 🔴 SOVEREIGNTY TRIPWIRE — see build.yml for the full reasoning.
+      - |
+        case "$CACHE_ENDPOINT" in
+          https://sos-*.exo.io) echo "cache endpoint OK: $CACHE_ENDPOINT" ;;
+          *) echo "REFUSING: cache endpoint '$CACHE_ENDPOINT' is not Exoscale SOS"; exit 1 ;;
+        esac
+      # buildctl reads the client's docker config and forwards the credential to the
+      # daemon PER BUILD over the session. That is what keeps the registry push
+      # credential subject to Woodpecker's per-repo trust and event gating — the
+      # daemon holds no standing registry credential of its own, deliberately (its
+      # Vault policy refuses kv/shared/ci-registry for exactly this reason).
+      # `base64 | tr -d` rather than `base64 -w0`: this is BusyBox base64.
+      - |
+        mkdir -p /root/.docker
+        AUTH=$(printf '%s:%s' "$REGISTRY_USERNAME" "$REGISTRY_PASSWORD" | base64 | tr -d '\n')
+        printf '{"auths":{"%s":{"auth":"%s"}}}\n' "$REGISTRY" "$AUTH" > /root/.docker/config.json
+        chmod 600 /root/.docker/config.json
+      # 🔑 A GREEN STEP PROVES THE CACHE WAS WRITTEN. A failed `--export-cache` is
+      # FATAL, not a warning — `ignore-error` defaults to false and is not set.
+      # Measured 21-08-2026 against a non-existent bucket: exit=1, "api error
+      # NoSuchBucket". So there is no separate post-flight check: this step
+      # succeeding IS the check, and the credential only works against SOS.
+      #
+      # The `name=` value carries a comma to publish two tags, so it must be QUOTED
+      # INSIDE the CSV or buildctl reads `latest` as a separate attribute.
+      - |
+        buildctl build \
+          --frontend dockerfile.v0 \
+          --local context=. \
+          --local dockerfile=. \
+          --opt filename=Dockerfile \
+          --import-cache "type=s3,region=$CACHE_REGION,bucket=$CACHE_BUCKET,endpoint_url=$CACHE_ENDPOINT,use_path_style=true,name=$CACHE_NAME" \
+          --export-cache "type=s3,region=$CACHE_REGION,bucket=$CACHE_BUCKET,endpoint_url=$CACHE_ENDPOINT,use_path_style=true,name=$CACHE_NAME,mode=max" \
+          --output "type=image,\"name=$REGISTRY/$IMAGE_REPO:$IMAGE_TAG,$REGISTRY/$IMAGE_REPO:latest\",push=true" \
+          --progress plain
+      - echo "pushed $REGISTRY/$IMAGE_REPO:$IMAGE_TAG and :latest"
   digest:
     image: alpine:3.20
     depends_on: [push]
