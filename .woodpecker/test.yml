@@ -26,7 +26,7 @@ steps:
           requests: { memory: 2Gi, cpu: 1 }
           limits: { memory: 6Gi }
     environment:
-      # ── sccache -> Exoscale SOS (migration phase 6, 21-08-2026) ───────────────
+      # ── sccache -> Infomaniak object storage (since 29-10-2026; Exoscale SOS before) ─
       # Plan: Infra/docs/plans/20-08-2026-buildkit-rootless-migration.md §6
       SCCACHE_BUCKET: ciphera-build-cache
       # 🔴 SOVEREIGNTY TRIPWIRE. sccache's OWN docs state it plainly: without
@@ -36,8 +36,8 @@ steps:
       # — a configured-looking line naming our bucket — and then does nothing:
       # 0 hits, 0 misses, 0 ERRORS. It never says it is pointing at AWS. That is
       # why the value is asserted in the commands below rather than trusted.
-      SCCACHE_ENDPOINT: https://sos-ch-dk-2.exo.io
-      SCCACHE_REGION: ch-dk-2
+      SCCACHE_ENDPOINT: https://s3.pub1.infomaniak.cloud
+      SCCACHE_REGION: us-east-1
       # Shared prefix across all Rust repos on purpose: sccache keys are content
       # hashes, so dependency crates compiled under the stable CARGO_HOME
       # (/usr/local/cargo in the rust image) can be shared between them.
@@ -76,14 +76,14 @@ steps:
       #   motivates a read-only key does not exist here. Revisit the day forks or a
       #   second contributor are enabled.
       CACHE_KEY_ID:
-        from_secret: build_cache_key
+        from_secret: build_cache_ci_key
       CACHE_KEY_SECRET:
-        from_secret: build_cache_secret
+        from_secret: build_cache_ci_secret
     commands:
       - |
         case "$SCCACHE_ENDPOINT" in
-          https://sos-*.exo.io) echo "sccache endpoint OK: $SCCACHE_ENDPOINT" ;;
-          *) echo "REFUSING: sccache endpoint '$SCCACHE_ENDPOINT' is not Exoscale SOS"; exit 1 ;;
+          https://s3.pub1.infomaniak.cloud) echo "sccache endpoint OK: $SCCACHE_ENDPOINT" ;;
+          *) echo "REFUSING: sccache endpoint '$SCCACHE_ENDPOINT' is not Infomaniak object storage (pub1)"; exit 1 ;;
         esac
       - |
         if [ -n "$CACHE_KEY_ID" ]; then
