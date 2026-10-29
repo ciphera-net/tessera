@@ -111,6 +111,15 @@ steps:
       - cargo install cargo-audit --locked
       - cargo audit
       - |
+        # RUSTSEC-2026-0387 is ignored in .cargo/audit.toml on one claim: no crypto-bigint code is
+        # linked into tessera (its suite is all curve25519-dalek). Hold the claim on every run: in a
+        # debug build nothing is inlined away, so any crypto-bigint function in use would appear.
+        cargo build --locked --bin tessera-sidecar
+        n=$(nm -C target/debug/tessera-sidecar | grep -c crypto_bigint || true)
+        d=$(nm -C target/debug/tessera-sidecar | grep -c curve25519_dalek || true)
+        echo "crypto_bigint symbols: $n (must be 0); curve25519_dalek symbols: $d (control, must be > 0)"
+        [ "$n" = 0 ] && [ "$d" -gt 0 ]
+      - |
         # Report the hit rate rather than assume it. `|| true` because a stats
         # read must never fail a green build.
         sccache --show-stats 2>/dev/null | grep -E 'Cache hits|Cache misses|Cache errors|Cache hits rate' || true

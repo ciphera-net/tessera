@@ -1,0 +1,16 @@
+# cargo-audit configuration, read by `cargo audit` in .woodpecker/audit.yml.
+
+[advisories]
+# RUSTSEC-2026-0387: crypto-bigint < 0.7.6, timing variability in operations meant to be constant-time.
+#
+# crypto-bigint 0.5.5 is in Cargo.lock only through elliptic-curve 0.13.8 (opaque-ke 4.0.1 directly and via
+# voprf 0.5.0 and ecdsa 0.16.9). Tessera's suite (src/suite.rs) is Ristretto255 for the OPRF,
+# TripleDh<Ristretto255, Sha512> for the key exchange and Argon2id: every group and scalar operation is
+# curve25519-dalek's, and elliptic-curve contributes only RFC 9380 expand_message_xmd (SHA-512 hashing).
+# Measured 29-10-2026: 0 crypto_bigint symbols in the debug and the release build of tessera-sidecar
+# (controls: 78 and 28 curve25519_dalek symbols), so no code from the crate is linked. The audit step
+# re-checks that on every run, so this entry cannot outlive its reason.
+#
+# There is no fix on the 0.5 line, and opaque-ke has no stable release on crypto-bigint >= 0.7.6 (4.1.0 is
+# a pre-release). Remove this entry when it ships one, or if the suite ever takes a NIST curve.
+ignore = ["RUSTSEC-2026-0387"]
