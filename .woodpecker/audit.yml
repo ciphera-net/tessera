@@ -15,7 +15,7 @@ when:
 
 steps:
   audit:
-    image: rust:1
+    image: registry.ops.ciphera.net/mirror/docker.io/library/rust:1-d841af61827b@sha256:d841af61827b29b3efa46f5363e8f2e972b379cc0463c319e8f320d9f0c8eb0c
     # Resources declared 29-07-2026 — without them the step pod is QoS BestEffort, first
     # evicted under node memory pressure. Estate-wide sweep after two pulse-backend steps
     # were SIGKILLed (exit 137) mid-download, presenting as a test failure (see
