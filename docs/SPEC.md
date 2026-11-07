@@ -140,8 +140,8 @@ carry a `result` field. OPAQUE blobs are base64-**STANDARD**.
 |--------|---------|---------------|
 | `unknown_login` | unknown `login_id` | 400 |
 | `invalid_credentials` | OPAQUE `InvalidLoginError` (wrong password) | 401 |
-| `bad_request` | malformed/tampered OPAQUE message or bad base64 (`SerializationError`/`SizeError`/`ReflectedValueError`) | 400 |
-| `internal` | `LibraryError` / I/O / internal crypto fault | 500 |
+| `bad_request` | malformed/tampered OPAQUE message or bad base64 (`SerializationError`/`SizeError`/`ReflectedValueError`, and a blinded element that is not a group element: `LibraryError(OprfError(Deserialization))`) | 400 |
+| `internal` | any other `LibraryError` / I/O / internal crypto fault | 500 |
 
 ---
 

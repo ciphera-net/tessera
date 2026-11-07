@@ -32,7 +32,7 @@ impl TesseraError {
     /// check (`InvalidLoginError`) is an authentication failure distinct from a malformed/tampered
     /// message or an internal crypto fault.
     pub fn code(&self) -> &'static str {
-        use opaque_ke::errors::ProtocolError;
+        use opaque_ke::errors::{InternalError, ProtocolError};
         match self {
             TesseraError::UnknownLogin => "unknown_login",
             TesseraError::Base64(_) | TesseraError::Protocol(_) => "bad_request",
@@ -43,6 +43,15 @@ impl TesseraError {
                 ProtocolError::SerializationError
                 | ProtocolError::SizeError { .. }
                 | ProtocolError::ReflectedValueError => "bad_request",
+                // A blinded element that is not a group element (the first field of a
+                // registration or credential request) is ALSO the caller's malformed
+                // message. opaque-ke reports voprf's deserialization failure as a library
+                // error, so it used to read as an internal fault (500). voprf deserializes
+                // nothing else per request: the ServerSetup is read once at start-up, and
+                // a stored password file fails as SerializationError.
+                ProtocolError::LibraryError(InternalError::OprfError(
+                    voprf::Error::Deserialization,
+                )) => "bad_request",
                 // LibraryError (and the uninhabited Custom) — an internal crypto fault (500).
                 _ => "internal",
             },
@@ -54,7 +63,7 @@ impl TesseraError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use opaque_ke::errors::ProtocolError;
+    use opaque_ke::errors::{InternalError, ProtocolError};
 
     #[test]
     fn error_codes_are_stable() {
@@ -76,6 +85,26 @@ mod tests {
         );
         assert_eq!(
             TesseraError::Io(std::io::Error::from(std::io::ErrorKind::Other)).code(),
+            "internal"
+        );
+        // A malformed blinded element is the caller's message, not an internal fault.
+        assert_eq!(
+            TesseraError::Opaque(ProtocolError::LibraryError(InternalError::OprfError(
+                voprf::Error::Deserialization
+            )))
+            .code(),
+            "bad_request"
+        );
+        // Every other library error stays internal: it is the server's fault.
+        assert_eq!(
+            TesseraError::Opaque(ProtocolError::LibraryError(InternalError::OprfError(
+                voprf::Error::DeriveKeyPair
+            )))
+            .code(),
+            "internal"
+        );
+        assert_eq!(
+            TesseraError::Opaque(ProtocolError::LibraryError(InternalError::HkdfError)).code(),
             "internal"
         );
     }
