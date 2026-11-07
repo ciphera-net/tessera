@@ -484,3 +484,49 @@ fn login_started_on_one_sidecar_finishes_on_another() {
     };
     assert_eq!(code, "unknown_login");
 }
+
+/// A message the sidecar cannot read is the caller's mistake (`bad_request`), whichever field
+/// is broken. A blinded element that is not a group element (the first field of a registration
+/// or credential request) used to come back `internal`, because opaque-ke reports voprf's
+/// deserialization failure as a library error.
+#[test]
+fn malformed_messages_are_bad_request() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_guard, socket) = start_sidecar_with_env(dir.path(), &[]);
+    let mut stream = UnixStream::connect(&socket).unwrap();
+    let bytes = |n: usize, b: u8| BASE64_STANDARD.encode(vec![b; n]);
+    let register = |request_b64: String| Request::RegisterStart {
+        request_b64,
+        credential_id: "cred".into(),
+    };
+    let cases: Vec<(&str, Request)> = vec![
+        ("register_start, not base64", register("not base64!".into())),
+        ("register_start, empty", register(String::new())),
+        ("register_start, one byte", register(bytes(1, 7))),
+        (
+            "register_start, 32 bytes of 0xff",
+            register(bytes(32, 0xff)),
+        ),
+        ("register_start, 32 zero bytes", register(bytes(32, 0))),
+        (
+            "login_start, 96 bytes of 0xff, unknown account",
+            Request::LoginStart {
+                request_b64: bytes(96, 0xff),
+                password_file_b64: None,
+                credential_id: "cred".into(),
+            },
+        ),
+        (
+            "register_finish, 192 bytes of 0xff",
+            Request::RegisterFinish {
+                upload_b64: bytes(192, 0xff),
+            },
+        ),
+    ];
+    for (name, req) in cases {
+        match send(&mut stream, &req) {
+            Response::Error { code, .. } => assert_eq!(code, "bad_request", "{name}"),
+            _ => panic!("{name}: expected an error response"),
+        }
+    }
+}
