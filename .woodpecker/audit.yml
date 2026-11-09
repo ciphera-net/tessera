@@ -14,6 +14,20 @@ when:
   - event: pull_request
 
 steps:
+  # The prebuilt tools the Rust step below uses, from the ci-rust-tools image (pinned by release-asset checksum and
+  # self-tested there), copied onto this workflow's volume next to the checkout. They used to be downloaded from
+  # GitHub releases in the Rust step, so a GitHub outage failed it.
+  rust-tools:
+    image: registry.ops.ciphera.net/ciphera-net/ci-rust-tools:v1
+    pull: true
+    backend_options:
+      kubernetes:
+        resources:
+          requests: { memory: 32Mi, cpu: 50m }
+          limits: { memory: 128Mi }
+    commands:
+      - ci-rust-tools "$(dirname "$CI_WORKSPACE")/ci-tools"
+
   audit:
     image: registry.ops.ciphera.net/mirror/docker.io/library/rust:1-d841af61827b@sha256:d841af61827b29b3efa46f5363e8f2e972b379cc0463c319e8f320d9f0c8eb0c
     # Resources declared 29-07-2026 — without them the step pod is QoS BestEffort, first
@@ -98,16 +112,23 @@ steps:
           echo "sccache: NO credential — compiling without a shared cache"
           unset RUSTC_WRAPPER
         fi
+      # sccache comes from the rust-tools step (prebuilt, checksum-pinned in the ci-rust-tools image).
+      - install -m 0755 "$(dirname "$CI_WORKSPACE")/ci-tools/sccache" /usr/local/bin/sccache
+      - sccache --version
+      # The sccache server checks the object-storage cache as it starts, and the client gives up after 10 s
+      # ("Timed out waiting for server startup"). Start it here with a minute (the timeout is read only from a
+      # config file); if it still does not start, print its log and build without the cache, which makes the
+      # build slower, never red.
       - |
-        # Checksum-pinned prebuilt binary, NOT `cargo install sccache` — the same
-        # security pattern this estate already uses for wasm-pack and its Go
-        # tarball, and it avoids compiling a build tool before every build.
-        SC=sccache-v0.17.0-x86_64-unknown-linux-musl
-        curl -fsSLO "https://github.com/mozilla/sccache/releases/download/v0.17.0/$SC.tar.gz"
-        echo "67c4a96dd237c1f518f6b36083f270f9976d516f1e57fce891755ea782e50006  $SC.tar.gz" | sha256sum -c -
-        tar xzf "$SC.tar.gz" && install -m0755 "$SC/sccache" /usr/local/bin/sccache
-        rm -rf "$SC" "$SC.tar.gz"
-        sccache --version
+        if [ -n "$RUSTC_WRAPPER" ]; then
+          printf 'server_startup_timeout_ms = 60000\n' > /tmp/sccache.toml
+          export SCCACHE_CONF=/tmp/sccache.toml SCCACHE_ERROR_LOG=/tmp/sccache-server.log SCCACHE_LOG=info
+          if ! sccache --start-server; then
+            echo "sccache: the server did not start, compiling without the shared cache; its log:"
+            tail -n 50 /tmp/sccache-server.log 2>/dev/null || true
+            unset RUSTC_WRAPPER
+          fi
+        fi
       - cargo install cargo-audit --locked
       - cargo audit
       - |
