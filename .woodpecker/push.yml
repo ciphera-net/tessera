@@ -100,7 +100,8 @@ steps:
           --progress plain
       - echo "pushed $REGISTRY/$IMAGE_REPO:$IMAGE_TAG and :latest"
   digest:
-    image: alpine:3.20
+    image: registry.ops.ciphera.net/ciphera-net/ci-deploy:v1
+    pull: true
     depends_on: [push]
     # The SAME ClusterIP pin the push step needs. Learned the hard way on the
     # first run (pipeline 28): push succeeded, then this step spent 135s failing
@@ -120,7 +121,6 @@ steps:
       REGISTRY_PASSWORD:
         from_secret: registry_password
     commands:
-      - apk add --no-cache curl >/dev/null
       - |
         TAG="sha-${CI_COMMIT_SHA:0:7}"
         DIGEST=$(curl -fsS -I -u "$REGISTRY_USERNAME:$REGISTRY_PASSWORD" \
